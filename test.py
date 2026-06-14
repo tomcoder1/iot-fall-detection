@@ -12,11 +12,6 @@ except ModuleNotFoundError:
     Interpreter = tf.lite.Interpreter
     print("Using tensorflow.lite.Interpreter")
 
-
-# ============================================================
-# Configuration
-# ============================================================
-
 MODEL_PATH = "movenet_multipose_lightning.tflite"
 
 CAMERA_INDEX = 0
@@ -32,11 +27,6 @@ PERSON_THRESHOLD = 0.25
 
 SHOW_DEBUG = True
 DRAW_ALL_PEOPLE = False
-
-
-# ============================================================
-# MoveNet keypoint indices
-# ============================================================
 
 NOSE = 0
 LEFT_EYE = 1
@@ -133,10 +123,6 @@ def map_keypoints_to_original(kps, meta):
 
     return mapped
 
-
-# ============================================================
-# MoveNet MultiPose wrapper
-# ============================================================
 
 class MoveNetMultiPose:
     def __init__(self, model_path, input_size=256, num_threads=4):
@@ -884,7 +870,7 @@ def main():
         else:
             actual_fps = 0.0
 
-        draw_status(frame, state, actual_fps, detector.debug)
+        # draw_status(frame, state, actual_fps, detector.debug)
 
         cv2.imshow("Rule-Based Fall Detection", frame)
 
