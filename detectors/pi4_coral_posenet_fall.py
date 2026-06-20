@@ -1,4 +1,5 @@
 from __future__ import annotations
+from iot_server import start_iot_server, update_iot_state
 
 """
 Raspberry Pi 4 + Coral USB TPU fall detector using Coral PoseNet.
@@ -251,6 +252,8 @@ def draw_hud(
 
 
 def main() -> int:
+
+    start_iot_server(port=8000)
     global fall_detected, fall_alarm_until
 
     model = CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
@@ -319,6 +322,18 @@ def main() -> int:
             elapsed = max(1e-6, time.time() - start_time)
             fps = processed_frames / elapsed
 
+            draw_hud(frame, fall_detected, fps, people_count, model_info, disabled_reason)
+
+            # Send latest frame + fall status to the IoT server.
+            # The APK reads this through /video_feed, /status, and /ws.
+            update_iot_state(
+                frame,
+                fall_detected=fall_detected,
+                status=disabled_reason if disabled_reason else ("FALL" if fall_detected else "OK"),
+                people=people_count,
+                fps=fps,
+            )
+
             if DEBUG_EVERY_N_FRAMES and frame_idx % DEBUG_EVERY_N_FRAMES == 0:
                 debug_states = [st.debug for _, st in results]
                 print(
@@ -327,18 +342,6 @@ def main() -> int:
                 )
 
             if DISPLAY:
-                if multi_person_disabled:
-                    for pose in accepted:
-                        draw_pose(frame, pose, None, disabled=True)
-                else:
-                    result_pose_ids = {id(pose) for pose, _ in results}
-                    for pose, state in results:
-                        draw_pose(frame, pose, state)
-                    for pose in accepted:
-                        if id(pose) not in result_pose_ids:
-                            draw_pose(frame, pose, None, disabled=True)
-
-                draw_hud(frame, fall_detected, fps, people_count, model_info, disabled_reason)
                 cv2.imshow("Pi4 Coral PoseNet Fall Detection", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
