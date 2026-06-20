@@ -162,6 +162,7 @@ def main() -> int:
         camera_height=CAMERA_HEIGHT,
         camera_fps=CAMERA_FPS,
         display=DISPLAY,
+        draw_pose=False,
         mirror_image=MIRROR_IMAGE,
         debug_every_n_frames=DEBUG_EVERY_N_FRAMES,
     )

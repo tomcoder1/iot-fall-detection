@@ -35,6 +35,7 @@ class AppOptions:
     camera_height: int = 480
     camera_fps: int = 30
     display: bool = True
+    draw_pose: bool = True
     mirror_image: bool = False
     debug_every_n_frames: int = 30
     camera_backend: Optional[int] = None
@@ -118,7 +119,8 @@ def run_app(
             elapsed = max(1e-6, time.monotonic() - started_at)
             fps = processed_frames / elapsed
 
-            _draw_results(frame, accepted, results, multi_person_disabled, config)
+            if options.draw_pose:
+                _draw_results(frame, accepted, results, multi_person_disabled, config)
             draw_hud(
                 frame,
                 fall_detected,
