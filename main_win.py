@@ -1,12 +1,5 @@
-from app_common import run_app
-from detectors.windows_movenet_multipose_fall import MoveNetMultiPoseDetector
-from settings import MOVENET_MODEL_PATH
-
-
-def main() -> None:
-    detector = MoveNetMultiPoseDetector(MOVENET_MODEL_PATH)
-    run_app(detector)
+from detectors.windows_movenet_multipose_fall import main
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

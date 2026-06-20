@@ -1,49 +1,18 @@
 from __future__ import annotations
 from iot_server import start_iot_server, update_iot_state
 
-"""
-Raspberry Pi 4 + Coral USB TPU fall detector using Coral PoseNet.
-
-Purpose:
-- Webcam at 640x480.
-- Coral PoseNet returns multiple people and 17 keypoints per person.
-- If more than one accepted person is visible, fall detection is disabled.
-- If exactly one accepted person is visible, event-based fall logic runs.
-- No argparse. Change settings below.
-
-Expected folder layout on the Pi:
-fall-detection/
-  pi4_coral_posenet_fall.py
-  fall_core.py
-  project-posenet/
-    pose_engine.py
-    posenet_lib/...
-    models/mobilenet/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite
-
-Recommended setup:
-cd ~/fall-detection
-git clone https://github.com/google-coral/project-posenet.git
-cd project-posenet
-sh install_requirements.sh
-cd ..
-python3 pi4_coral_posenet_fall.py
-"""
-
 import sys
-import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
 from PIL import Image
 
+from app_common import AppOptions, run_app
 from .fall_core import (
     FallConfig,
-    FallDetector,
     Pose,
-    PersonState,
-    SKELETON_EDGES,
     pose_bbox_from_keypoints,
 )
 
@@ -57,8 +26,9 @@ CAMERA_FPS = 30
 DISPLAY = True
 MIRROR_IMAGE = False
 DEBUG_EVERY_N_FRAMES = 30
-PROJECT_POSENET_DIR = Path("project-posenet")
-MODEL_PATH = PROJECT_POSENET_DIR / "models/mobilenet/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_POSENET_DIR = PROJECT_ROOT / "project-posenet"
+MODEL_PATH = PROJECT_ROOT / "models/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite"
 
 CONFIG = FallConfig(
     min_pose_score=0.10,
@@ -101,10 +71,6 @@ CONFIG = FallConfig(
 
     bed_top_y=None,
 )
-
-# Public boolean for IoT logic.
-fall_detected = False
-fall_alarm_until = 0.0
 
 # PoseNet keypoint names in google-coral/project-posenet.
 POSENET_NAME_TO_INDEX = {
@@ -183,175 +149,23 @@ class CoralPoseNet:
         return Pose(keypoints=keypoints, bbox=bbox, score=float(coral_pose.score))
 
 
-def draw_pose(frame: np.ndarray, pose: Pose, state: Optional[PersonState], disabled: bool = False) -> None:
-    h, w = frame.shape[:2]
-    keypoints = pose.keypoints
-    min_kpt_score = CONFIG.min_kpt_score
-
-    if disabled:
-        color = (0, 255, 255)
-    elif state is not None and state.last_status == "FALL":
-        color = (0, 0, 255)
-    elif state is not None and state.last_status == "LYING":
-        color = (255, 180, 0)
-    elif state is not None and state.last_status in {"POSSIBLE_FALL", "DESCENDING"}:
-        color = (0, 165, 255)
-    elif state is not None and state.last_status == "BENDING":
-        color = (255, 255, 0)
-    else:
-        color = (0, 200, 0)
-
-    for a, b in SKELETON_EDGES:
-        ya, xa, sa = keypoints[a]
-        yb, xb, sb = keypoints[b]
-        if sa >= min_kpt_score and sb >= min_kpt_score:
-            cv2.line(frame, (int(xa * w), int(ya * h)), (int(xb * w), int(yb * h)), color, 2)
-
-    for y, x, score in keypoints:
-        if score >= min_kpt_score:
-            cv2.circle(frame, (int(x * w), int(y * h)), 4, (0, 255, 255), -1)
-
-    bbox = pose_bbox_from_keypoints(keypoints, min_kpt_score) or pose.bbox
-    ymin, xmin, ymax, xmax = bbox
-    cv2.rectangle(frame, (int(xmin * w), int(ymin * h)), (int(xmax * w), int(ymax * h)), color, 2)
-
-    if disabled:
-        label = "MULTI-PERSON: FALL OFF"
-    elif state is None:
-        label = f"score={pose.score:.2f}"
-    else:
-        dbg = state.debug
-        label = (
-            f"id={state.track_id} {state.last_status} cnt={dbg.get('fall_counter', 0)} "
-            f"r={float(dbg.get('ratio', 0)):.2f} "
-            f"a={float(dbg.get('angle', -1)):.0f} "
-            f"v={float(dbg.get('max_down_speed', 0)):.2f}"
-        )
-    cv2.putText(frame, label, (int(xmin * w), max(20, int(ymin * h) - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
-
-def draw_hud(
-    frame: np.ndarray,
-    current_fall_detected: bool,
-    fps: float,
-    people_count: int,
-    model_info: Dict[str, object],
-    disabled_reason: Optional[str],
-) -> None:
-    if disabled_reason:
-        status_text = f"fall_detected = False | {disabled_reason}"
-        status_color = (0, 255, 255)
-    else:
-        status_text = f"fall_detected = {current_fall_detected}"
-        status_color = (0, 0, 255) if current_fall_detected else (0, 200, 0)
-
-    cv2.rectangle(frame, (0, 0), (frame.shape[1], 110), (0, 0, 0), -1)
-    cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.72, status_color, 2)
-    cv2.putText(frame, f"FPS(avg): {fps:.1f} | accepted people: {people_count}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2)
-    cv2.putText(frame, f"model: {model_info.get('model_type', '?')} | infer: {float(model_info.get('inference_ms', 0.0)):.1f} ms", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (255, 255, 255), 1)
+CoralPoseNetDetector = CoralPoseNet
 
 
 def main() -> int:
-
-    start_iot_server(port=8000)
-    global fall_detected, fall_alarm_until
-
     model = CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
-    detector = FallDetector(CONFIG)
-
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-    cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
-    if not cap.isOpened():
-        raise RuntimeError(f"Could not open webcam index {CAMERA_INDEX}")
-
-    frame_idx = 0
-    processed_frames = 0
-    start_time = time.time()
-    multi_person_hits = 0
-
-    print("[INFO] Started Coral PoseNet fall detector.")
-    print("[INFO] Camera: 640x480 webcam")
-    print("[INFO] Rule: if 2+ people are visible, fall detection is OFF.")
-    print("[INFO] Press q to quit.")
-
-    try:
-        while True:
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                print("[INFO] Camera read failed.")
-                break
-
-            frame_idx += 1
-            if MIRROR_IMAGE:
-                frame = cv2.flip(frame, 1)
-
-            now = time.time()
-            poses, model_info = model.infer(frame)
-            accepted = detector.accepted_poses(poses)
-            people_count = len(accepted)
-
-            if people_count > 1:
-                multi_person_hits += 1
-            else:
-                multi_person_hits = 0
-
-            multi_person_disabled = CONFIG.stop_when_multiple_people and multi_person_hits >= CONFIG.multi_person_confirm_frames
-            disabled_reason = None
-            results: List[Tuple[Pose, PersonState]] = []
-
-            if people_count == 0:
-                detector.reset()
-                fall_alarm_until = 0.0
-                fall_detected = False
-                disabled_reason = "NO PERSON"
-            elif multi_person_disabled:
-                detector.reset()
-                fall_alarm_until = 0.0
-                fall_detected = False
-                disabled_reason = "MULTI-PERSON: DETECTION STOPPED"
-            else:
-                results = detector.update(accepted[:1], now)
-                current_fall = any(state.last_status == "FALL" for state in detector.states.values())
-                if current_fall:
-                    fall_alarm_until = now + CONFIG.alarm_hold_sec
-                fall_detected = now <= fall_alarm_until
-
-            processed_frames += 1
-            elapsed = max(1e-6, time.time() - start_time)
-            fps = processed_frames / elapsed
-
-            draw_hud(frame, fall_detected, fps, people_count, model_info, disabled_reason)
-
-            # Send latest frame + fall status to the IoT server.
-            # The APK reads this through /video_feed, /status, and /ws.
-            update_iot_state(
-                frame,
-                fall_detected=fall_detected,
-                status=disabled_reason if disabled_reason else ("FALL" if fall_detected else "OK"),
-                people=people_count,
-                fps=fps,
-            )
-
-            if DEBUG_EVERY_N_FRAMES and frame_idx % DEBUG_EVERY_N_FRAMES == 0:
-                debug_states = [st.debug for _, st in results]
-                print(
-                    f"[DEBUG] frame={frame_idx} fps={fps:.1f} people={people_count} "
-                    f"fall_detected={fall_detected} states={debug_states}"
-                )
-
-            if DISPLAY:
-                cv2.imshow("Pi4 Coral PoseNet Fall Detection", frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-    finally:
-        cap.release()
-        if DISPLAY:
-            cv2.destroyAllWindows()
-
-    print("[INFO] Done.")
-    return 0
+    start_iot_server(port=8000)
+    options = AppOptions(
+        title="Pi4 Coral PoseNet Fall Detection",
+        camera_index=CAMERA_INDEX,
+        camera_width=CAMERA_WIDTH,
+        camera_height=CAMERA_HEIGHT,
+        camera_fps=CAMERA_FPS,
+        display=DISPLAY,
+        mirror_image=MIRROR_IMAGE,
+        debug_every_n_frames=DEBUG_EVERY_N_FRAMES,
+    )
+    return run_app(model, CONFIG, options, state_sink=update_iot_state)
 
 
 if __name__ == "__main__":

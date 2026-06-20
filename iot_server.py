@@ -1,5 +1,6 @@
-import time
+import asyncio
 import threading
+import time
 from typing import Optional
 
 import cv2
@@ -29,7 +30,7 @@ def update_iot_state(
     status: str = "OK",
     people: int = 0,
     fps: float = 0.0,
-):
+) -> None:
     """
     Call this once per camera frame from your fall detection loop.
     """
@@ -97,29 +98,21 @@ def video_feed():
 async def websocket_status(websocket: WebSocket):
     await websocket.accept()
 
-    last_seq = -1
-
     try:
         while True:
             with _lock:
                 data = dict(_state)
 
-            # Send immediately on state change.
-            if data["seq"] != last_seq:
-                await websocket.send_json(data)
-                last_seq = data["seq"]
-            else:
-                # Also send heartbeat so the app knows the Pi is alive.
-                await websocket.send_json(data)
-
-            await websocket.receive_text()
+            # Clients can remain read-only; this also acts as a heartbeat.
+            await websocket.send_json(data)
+            await asyncio.sleep(1.0)
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
 
 
-def start_iot_server(host: str = "0.0.0.0", port: int = 8000):
+def start_iot_server(host: str = "0.0.0.0", port: int = 8000) -> threading.Thread:
     def run():
         uvicorn.run(
             app,
@@ -131,3 +124,4 @@ def start_iot_server(host: str = "0.0.0.0", port: int = 8000):
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     print(f"IoT server running at http://{host}:{port}")
+    return thread
