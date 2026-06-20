@@ -1,5 +1,5 @@
 from app_common import run_app
-from detectors.movenet_multipose import MoveNetMultiPoseDetector
+from detectors.windows_movenet_multipose_fall import MoveNetMultiPoseDetector
 from settings import MOVENET_MODEL_PATH
 
 

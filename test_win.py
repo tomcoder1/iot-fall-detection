@@ -1,288 +1,234 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import csv
+import math
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 
-import fall_detector as fall_module
-from app_common import _is_accepted_person
-from detectors.movenet_multipose import MoveNetMultiPoseDetector
-from fall_detector import FallDetector
-from settings import MOVENET_MODEL_PATH, MULTI_PERSON_CONFIRM_FRAMES
+from detectors.fall_core import FallDetector
+from detectors.windows_movenet_multipose_fall import CONFIG, INPUT_SIZE, NUM_THREADS, MoveNetMultiPose, resolve_model_path
+
+# ============================================================
+# User settings. Edit these, do not use command-line arguments.
+# ============================================================
+DATASET_ROOT = Path("dataset")
+SAVE_DEBUG_CSV = True
+DEBUG_CSV_PATH = Path("fall_debug_results.csv")
+VIDEO_EXTENSIONS = ("*.mp4", "*.avi", "*.mov", "*.mkv")
 
 
-DATASET_DIR = Path("dataset")
-
-# Process every frame. Set to 2 or 3 if testing is too slow.
-FRAME_STRIDE = 1
-
-# Set to None to test everything.
-# Example: MAX_VIDEOS = 10 for a quick test.
-MAX_VIDEOS: Optional[int] = None
-
-# Print each video result.
-VERBOSE = True
-
-
-@dataclass
-class VideoResult:
-    path: Path
-    true_fall: bool
-    predicted_fall: bool
-    frames_read: int
-    frames_used: int
-    max_hip_speed: float
-    max_shoulder_speed: float
-    max_ratio: float
-    min_torso_angle: float
-    final_status: str
+def find_videos(dataset_root: Path) -> List[Tuple[str, Path]]:
+    videos: List[Tuple[str, Path]] = []
+    for subject_dir in sorted(dataset_root.glob("Subject *")):
+        for label in ("ADL", "Fall"):
+            label_dir = subject_dir / label
+            if not label_dir.exists():
+                continue
+            for pattern in VIDEO_EXTENSIONS:
+                for path in sorted(label_dir.glob(pattern)):
+                    videos.append((label, path))
+    return videos
 
 
-class SimulatedClock:
-    def __init__(self) -> None:
-        self.t = 0.0
-
-    def now(self) -> float:
-        return self.t
-
-    def set_time(self, frame_index: int, fps: float) -> None:
-        self.t = frame_index / max(fps, 1e-6)
+def safe_video_fps(cap: cv2.VideoCapture) -> float:
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    if not math.isfinite(fps) or fps <= 1.0:
+        return 30.0
+    return fps
 
 
-def find_videos(dataset_dir: Path) -> list[Path]:
-    videos: list[Path] = []
-
-    for label_folder in ["Fall", "ADL"]:
-        videos.extend(dataset_dir.glob(f"**/{label_folder}/*.mp4"))
-        videos.extend(dataset_dir.glob(f"**/{label_folder}/*.avi"))
-        videos.extend(dataset_dir.glob(f"**/{label_folder}/*.mov"))
-        videos.extend(dataset_dir.glob(f"**/{label_folder}/*.mkv"))
-
-    return sorted(videos)
-
-
-def label_from_path(path: Path) -> bool:
-    parts = {part.lower() for part in path.parts}
-
-    if "fall" in parts:
-        return True
-
-    if "adl" in parts:
-        return False
-
-    raise ValueError(f"Cannot infer label from path: {path}")
-
-
-def evaluate_video(
-    path: Path,
-    pose_detector: MoveNetMultiPoseDetector,
-    clock: SimulatedClock,
-) -> VideoResult:
-    true_fall = label_from_path(path)
-
+def process_video(model: MoveNetMultiPose, label: str, path: Path) -> Dict[str, object]:
+    detector = FallDetector(CONFIG)
     cap = cv2.VideoCapture(str(path))
-
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {path}")
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
-
-    if fps is None or fps <= 1 or fps > 240:
-        fps = 30.0
-
-    fall_detector = FallDetector()
-
-    frame_index = 0
-    frames_used = 0
-    multi_person_counter = 0
-
+    fps = safe_video_fps(cap)
+    frame_idx = 0
+    multi_person_hits = 0
     predicted_fall = False
-    final_status = "NO PERSON"
+    fall_frame: Optional[int] = None
+    fall_debug: Dict[str, object] = {}
 
-    max_hip_speed = 0.0
-    max_shoulder_speed = 0.0
+    max_hip_v = 0.0
+    max_shoulder_v = 0.0
     max_ratio = 0.0
-    min_torso_angle = 999.0
+    min_angle: Optional[float] = None
+    max_score = 0.0
+    best_debug: Dict[str, object] = {}
 
-    while True:
-        ok, frame = cap.read()
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                break
 
-        if not ok or frame is None:
-            break
+            frame_idx += 1
+            # Important: use video time, not wall-clock processing time.
+            # Wall time makes velocity depend on your PC speed and corrupts testing.
+            now = frame_idx / fps
 
-        frame_index += 1
+            poses, _ = model.infer(frame)
+            accepted = detector.accepted_poses(poses)
+            people_count = len(accepted)
 
-        if frame_index % FRAME_STRIDE != 0:
-            continue
+            if people_count > 1:
+                multi_person_hits += 1
+            else:
+                multi_person_hits = 0
 
-        frames_used += 1
-        clock.set_time(frame_index, fps)
+            multi_person_disabled = CONFIG.stop_when_multiple_people and multi_person_hits >= CONFIG.multi_person_confirm_frames
 
-        frame_height, frame_width = frame.shape[:2]
+            if people_count == 0 or multi_person_disabled:
+                detector.reset()
+                continue
 
-        people = pose_detector.detect(frame)
+            results = detector.update(accepted[:1], now)
+            for _, state in results:
+                dbg = state.debug
+                max_hip_v = max(max_hip_v, float(dbg.get("hip_speed", 0.0)))
+                max_shoulder_v = max(max_shoulder_v, float(dbg.get("shoulder_speed", 0.0)))
+                max_ratio = max(max_ratio, float(dbg.get("ratio", 0.0)))
+                angle = float(dbg.get("angle", -1.0))
+                if angle >= 0:
+                    min_angle = angle if min_angle is None else min(min_angle, angle)
 
-        accepted_people = [
-            person
-            for person in people
-            if _is_accepted_person(person, frame_width, frame_height)
-        ]
+                # A rough score for explaining near misses.
+                score = 0.0
+                if bool(dbg.get("recent_upright", False)):
+                    score += 1.0
+                if bool(dbg.get("strong_motion", False)):
+                    score += 1.0
+                if bool(dbg.get("horizontal", False)):
+                    score += 1.0
+                if bool(dbg.get("low_enough", False)):
+                    score += 1.0
+                score += min(1.0, float(dbg.get("max_down_speed", 0.0)) / max(CONFIG.fall_drop_speed, 1e-6))
+                if score > max_score:
+                    max_score = score
+                    best_debug = dict(dbg)
+                    best_debug["frame"] = frame_idx
+                    best_debug["status"] = state.last_status
 
-        if len(accepted_people) > 1:
-            multi_person_counter += 1
-        else:
-            multi_person_counter = 0
+                if state.last_status == "FALL" and not predicted_fall:
+                    predicted_fall = True
+                    fall_frame = frame_idx
+                    fall_debug = dict(dbg)
+                    fall_debug["frame"] = frame_idx
+    finally:
+        cap.release()
 
-        multi_person_confirmed = multi_person_counter >= MULTI_PERSON_CONFIRM_FRAMES
+    truth = "FALL" if label.lower() == "fall" else "ADL"
+    pred = "FALL" if predicted_fall else "NO FALL"
+    correct = (truth == "FALL" and predicted_fall) or (truth == "ADL" and not predicted_fall)
 
-        if multi_person_confirmed:
-            fall_detector.reset()
-            result = fall_detector.update(None, frame_width, frame_height)
-        elif len(accepted_people) == 1:
-            result = fall_detector.update(accepted_people[0], frame_width, frame_height)
-        else:
-            result = fall_detector.update(None, frame_width, frame_height)
-
-        final_status = result.status
-
-        max_hip_speed = max(max_hip_speed, result.hip_speed)
-        max_shoulder_speed = max(max_shoulder_speed, result.shoulder_speed)
-        max_ratio = max(max_ratio, result.box_ratio)
-        min_torso_angle = min(min_torso_angle, result.torso_angle)
-
-        if result.fall_detected:
-            predicted_fall = True
-
-    cap.release()
-
-    if min_torso_angle == 999.0:
-        min_torso_angle = 0.0
-
-    return VideoResult(
-        path=path,
-        true_fall=true_fall,
-        predicted_fall=predicted_fall,
-        frames_read=frame_index,
-        frames_used=frames_used,
-        max_hip_speed=max_hip_speed,
-        max_shoulder_speed=max_shoulder_speed,
-        max_ratio=max_ratio,
-        min_torso_angle=min_torso_angle,
-        final_status=final_status,
-    )
-
-
-def safe_div(numerator: float, denominator: float) -> float:
-    if denominator == 0:
-        return 0.0
-
-    return numerator / denominator
+    return {
+        "path": str(path),
+        "truth": truth,
+        "pred": pred,
+        "correct": correct,
+        "frames": frame_idx,
+        "fps": fps,
+        "fall_frame": fall_frame if fall_frame is not None else "",
+        "hip_v": max_hip_v,
+        "shoulder_v": max_shoulder_v,
+        "ratio": max_ratio,
+        "angle": min_angle if min_angle is not None else -1.0,
+        "best_frame": best_debug.get("frame", ""),
+        "best_status": best_debug.get("status", ""),
+        "best_recent_upright": best_debug.get("recent_upright", ""),
+        "best_strong_motion": best_debug.get("strong_motion", ""),
+        "best_horizontal": best_debug.get("horizontal", ""),
+        "best_low_enough": best_debug.get("low_enough", ""),
+        "fall_recent_upright": fall_debug.get("recent_upright", ""),
+        "fall_strong_motion": fall_debug.get("strong_motion", ""),
+        "fall_horizontal": fall_debug.get("horizontal", ""),
+        "fall_low_enough": fall_debug.get("low_enough", ""),
+    }
 
 
-def main() -> None:
-    if not DATASET_DIR.exists():
-        raise FileNotFoundError(
-            f"Missing dataset folder: {DATASET_DIR.resolve()}\n"
-            "Expected structure like: dataset/Subject 1/Fall/*.mp4 and dataset/Subject 1/ADL/*.mp4"
-        )
-
-    videos = find_videos(DATASET_DIR)
-
-    if MAX_VIDEOS is not None:
-        videos = videos[:MAX_VIDEOS]
-
+def main() -> int:
+    videos = find_videos(DATASET_ROOT)
     if not videos:
-        raise RuntimeError(
-            f"No videos found in {DATASET_DIR.resolve()}.\n"
-            "Expected videos inside Fall and ADL folders."
-        )
+        raise RuntimeError(f"No videos found under {DATASET_ROOT.resolve()}")
 
     print(f"Found {len(videos)} videos.")
-    print(f"Loading model: {MOVENET_MODEL_PATH}")
+    model_path = resolve_model_path()
+    print(f"Loading model: {model_path.resolve()}")
+    model = MoveNetMultiPose(model_path, NUM_THREADS, INPUT_SIZE)
 
-    pose_detector = MoveNetMultiPoseDetector(MOVENET_MODEL_PATH)
+    rows: List[Dict[str, object]] = []
+    tp = fp = tn = fn = 0
 
-    # Important:
-    # FallDetector uses monotonic() internally.
-    # For video testing, we patch it to use video time instead of real wall time.
-    clock = SimulatedClock()
-    fall_module.monotonic = clock.now
+    for idx, (label, path) in enumerate(videos, start=1):
+        row = process_video(model, label, path)
+        rows.append(row)
 
-    results: list[VideoResult] = []
+        truth = row["truth"]
+        pred = row["pred"]
+        if truth == "FALL" and pred == "FALL":
+            tp += 1
+        elif truth == "ADL" and pred == "FALL":
+            fp += 1
+        elif truth == "ADL" and pred == "NO FALL":
+            tn += 1
+        elif truth == "FALL" and pred == "NO FALL":
+            fn += 1
 
-    for index, video_path in enumerate(videos, start=1):
-        try:
-            result = evaluate_video(video_path, pose_detector, clock)
-            results.append(result)
+        print(
+            f"[{idx:03d}/{len(videos)}] true={truth:<4} pred={pred:<7} "
+            f"frames={int(row['frames']):4d} hip_v={float(row['hip_v']):.2f} "
+            f"shoulder_v={float(row['shoulder_v']):.2f} ratio={float(row['ratio']):.2f} "
+            f"angle={float(row['angle']):.0f} fall_frame={row['fall_frame']} {row['path']}"
+        )
 
-            if VERBOSE:
-                true_label = "FALL" if result.true_fall else "ADL"
-                pred_label = "FALL" if result.predicted_fall else "NO FALL"
+    total = max(1, tp + fp + tn + fn)
+    accuracy = (tp + tn) / total
+    precision = tp / max(1, tp + fp)
+    recall = tp / max(1, tp + fn)
+    specificity = tn / max(1, tn + fp)
+    f1 = (2 * precision * recall) / max(1e-9, precision + recall)
 
-                print(
-                    f"[{index:03d}/{len(videos):03d}] "
-                    f"true={true_label:4s} pred={pred_label:7s} "
-                    f"frames={result.frames_used:4d} "
-                    f"hip_v={result.max_hip_speed:.2f} "
-                    f"shoulder_v={result.max_shoulder_speed:.2f} "
-                    f"ratio={result.max_ratio:.2f} "
-                    f"angle={result.min_torso_angle:.0f} "
-                    f"{result.path}"
-                )
-
-        except Exception as exc:
-            print(f"[ERROR] {video_path}: {exc}")
-
-    tp = sum(1 for r in results if r.true_fall and r.predicted_fall)
-    fn = sum(1 for r in results if r.true_fall and not r.predicted_fall)
-    fp = sum(1 for r in results if not r.true_fall and r.predicted_fall)
-    tn = sum(1 for r in results if not r.true_fall and not r.predicted_fall)
-
-    total = tp + tn + fp + fn
-
-    accuracy = safe_div(tp + tn, total)
-    precision = safe_div(tp, tp + fp)
-    recall = safe_div(tp, tp + fn)
-    specificity = safe_div(tn, tn + fp)
-    f1 = safe_div(2 * precision * recall, precision + recall)
-
-    false_positives = [r for r in results if not r.true_fall and r.predicted_fall]
-    false_negatives = [r for r in results if r.true_fall and not r.predicted_fall]
-
-    print()
-    print("========== RESULTS ==========")
+    print("\n========== RESULTS ==========")
     print(f"Total videos: {total}")
-    print()
-    print("Confusion matrix:")
+    print("\nConfusion matrix:")
     print(f"TP: {tp}")
     print(f"FP: {fp}")
     print(f"TN: {tn}")
     print(f"FN: {fn}")
-    print()
-    print(f"Accuracy:    {accuracy:.3f}")
+    print(f"\nAccuracy:    {accuracy:.3f}")
     print(f"Precision:   {precision:.3f}")
     print(f"Recall:      {recall:.3f}")
     print(f"Specificity: {specificity:.3f}")
     print(f"F1 score:    {f1:.3f}")
 
-    print()
-    print("False positives:")
-    if false_positives:
-        for r in false_positives:
-            print(f"  FP  {r.path}")
-    else:
-        print("  none")
+    false_positives = [r for r in rows if r["truth"] == "ADL" and r["pred"] == "FALL"]
+    false_negatives = [r for r in rows if r["truth"] == "FALL" and r["pred"] == "NO FALL"]
 
-    print()
-    print("False negatives:")
-    if false_negatives:
-        for r in false_negatives:
-            print(f"  FN  {r.path}")
-    else:
-        print("  none")
+    print("\nFalse positives:")
+    for r in false_positives:
+        print("  FP ", r["path"])
+
+    print("\nFalse negatives:")
+    for r in false_negatives:
+        print(
+            "  FN ", r["path"],
+            f"best_frame={r['best_frame']} status={r['best_status']} "
+            f"upright={r['best_recent_upright']} motion={r['best_strong_motion']} "
+            f"horizontal={r['best_horizontal']} low={r['best_low_enough']}"
+        )
+
+    if SAVE_DEBUG_CSV:
+        with DEBUG_CSV_PATH.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"\nWrote debug CSV: {DEBUG_CSV_PATH}")
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,5 +1,5 @@
 from app_common import run_app
-from detectors.coral_posenet import CoralPoseNetDetector
+from detectors.pi4_coral_posenet_fall import CoralPoseNetDetector
 from settings import CORAL_POSENET_MODEL_PATH
 
 
