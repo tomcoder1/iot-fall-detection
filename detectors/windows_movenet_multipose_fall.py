@@ -9,10 +9,8 @@ import numpy as np
 
 from app_common import AppOptions, run_app
 
-from .fall_core import (
-    FallConfig,
-    Pose,
-)
+from .fall_classifier import ClassifierConfig, KeypointFallClassifier
+from .pose import Pose
 
 # ============================================================
 # User settings. Edit these, do not use command-line arguments.
@@ -20,6 +18,7 @@ from .fall_core import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "models/movenet_multipose_lightning.tflite"
 MODEL_PATH_FALLBACK = Path("movenet_multipose_lightning.tflite")
+FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier.json"
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
@@ -30,46 +29,14 @@ DEBUG_EVERY_N_FRAMES = 30
 NUM_THREADS = 4
 INPUT_SIZE = 256
 
-CONFIG = FallConfig(
-    min_pose_score=0.10,
-    min_kpt_score=0.08,
-    min_valid_keypoints=5,
-    min_body_area=0.015,
-
+CLASSIFIER_CONFIG = ClassifierConfig(
+    min_pose_score=0.05,
+    min_kpt_score=0.06,
+    min_valid_keypoints=4,
+    min_body_area=0.0,
     stop_when_multiple_people=True,
     multi_person_confirm_frames=2,
-
-    upright_angle=65.0,
-    upright_max_ratio=1.00,
-
-    horizontal_angle=35.0,
-    horizontal_ratio=1.30,
-
-    low_horizontal_angle=35.0,
-    low_horizontal_ratio=0.95,
-
-    pair_horizontal_ratio=1.55,
-    pair_threshold_y=0.12,
-    pair_threshold_x=0.25,
-
-    fall_drop_speed=0.95,
-    soft_drop_speed=0.35,
-    motion_memory_sec=1.75,
-    descent_timeout_sec=2.25,
-    upright_memory_sec=5.00,
-
-    min_low_drop_norm=0.08,
-    min_low_drop_body_heights=0.25,
-
-    fall_frames=4,
-    high_confidence_increment=2,
     alarm_hold_sec=5.0,
-
-    allow_static_lying=False,
-    allow_no_upright_if_very_fast=True,
-    very_fast_drop_speed=2.50,
-
-    bed_top_y=None,
 )
 
 def safe_int_list(values: Iterable[object]) -> List[int]:
@@ -240,6 +207,7 @@ MoveNetMultiPoseDetector = MoveNetMultiPose
 
 def main() -> int:
     model = MoveNetMultiPose(resolve_model_path(), NUM_THREADS, INPUT_SIZE)
+    detector = KeypointFallClassifier(FALL_CLASSIFIER_PATH, CLASSIFIER_CONFIG)
     options = AppOptions(
         title="Windows MoveNet MultiPose Fall Detection",
         camera_index=CAMERA_INDEX,
@@ -251,7 +219,7 @@ def main() -> int:
         debug_every_n_frames=DEBUG_EVERY_N_FRAMES,
         camera_backend=cv2.CAP_DSHOW,
     )
-    return run_app(model, CONFIG, options)
+    return run_app(model, detector, options)
 
 
 if __name__ == "__main__":

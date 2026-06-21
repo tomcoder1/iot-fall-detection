@@ -1,8 +1,9 @@
 # IoT fall detection
 
-The Windows and Raspberry Pi applications share the same event-based fall logic
-in `detectors/fall_core.py`. Platform modules only perform pose inference; the
-camera loop, filtering, drawing, and alarm handling live in `app_common.py`.
+The Windows and Raspberry Pi applications share a trained temporal keypoint
+classifier. MoveNet or Coral PoseNet supplies 17 normalized keypoints; a compact
+random forest evaluates 1.5 seconds of keypoint history. The portable model is
+`models/fall_classifier.json` and needs only NumPy at runtime.
 
 ## Windows
 
@@ -13,8 +14,7 @@ uv sync
 uv run python main_win.py
 ```
 
-Press `q` or Escape to stop. The Windows evaluator uses the same MoveNet adapter
-and fall core:
+Press `q` or Escape to stop. The Windows evaluator runs the production model:
 
 ```powershell
 uv run python test_win.py
@@ -22,8 +22,8 @@ uv run python test_win.py
 
 ## Raspberry Pi 4 + Coral USB Accelerator
 
-Install OpenCV, Pillow, FastAPI/Uvicorn, and the Coral Edge TPU runtime on the
-Pi. Clone Google's PoseNet helper beside this README:
+Use Python 3.9 and follow the complete OS-package, virtual-environment, and
+Coral setup at the top of `pi_requirements.txt`. Clone Google's PoseNet helper:
 
 ```bash
 git clone https://github.com/google-coral/project-posenet.git
@@ -69,10 +69,21 @@ configuration or delivery error.
 
 ```text
 Windows MoveNet ----\
-                     > Pose[] -> shared camera runtime -> fall_core -> alarm/HUD
+                     > Pose[] -> keypoint history -> random forest -> alarm/HUD
 Pi Coral PoseNet ---/                                      |
                                                            +-> Pi IoT server
 ```
 
-Detection thresholds remain platform-specific `CONFIG` objects so the existing
-dataset evaluator and deployed Coral configuration retain their current values.
+## Training and held-out test
+
+The GMDCSA24 split is random, stratified, deterministic, and video-level: 75%
+training and 25% held out. Reproduce extraction, model selection, and evaluation:
+
+```powershell
+uv pip install --python .venv\Scripts\python.exe -r train\requirements.txt
+.venv\Scripts\python.exe -m train.extract_keypoints
+.venv\Scripts\python.exe -m train.train_classifier
+```
+
+Results and the exact split are in `train/report.json`. Only the old detector's
+recorded benchmark remains for comparison; its implementation has been removed.

@@ -10,11 +10,8 @@ import numpy as np
 from PIL import Image
 
 from app_common import AppOptions, run_app
-from .fall_core import (
-    FallConfig,
-    Pose,
-    pose_bbox_from_keypoints,
-)
+from .fall_classifier import ClassifierConfig, KeypointFallClassifier
+from .pose import Pose, pose_bbox_from_keypoints
 
 # ============================================================
 # User settings. Edit these, do not use command-line arguments.
@@ -29,61 +26,17 @@ DEBUG_EVERY_N_FRAMES = 30
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_POSENET_DIR = PROJECT_ROOT / "project-posenet"
 MODEL_PATH = PROJECT_ROOT / "models/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite"
+FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier.json"
 
-CONFIG = FallConfig(
-    # Coral PoseNet quality filters.
-    # Keep these slightly loose, but not too loose.
-    min_pose_score=0.10,
+CLASSIFIER_CONFIG = ClassifierConfig(
+    # Match the quality filters used while extracting the training data.
+    min_pose_score=0.05,
     min_kpt_score=0.06,
-    min_valid_keypoints=5,
-    min_body_area=0.010,
-
-    # Multiple people.
+    min_valid_keypoints=4,
+    min_body_area=0.0,
     stop_when_multiple_people=True,
-    multi_person_confirm_frames=3,
-
-    # Upright memory.
-    upright_angle=65.0,
-    upright_max_ratio=1.10,
-    upright_memory_sec=6.00,
-
-    # Horizontal fall rule.
-    horizontal_angle=50.0,
-    horizontal_ratio=1.25,
-
-    # Low-body fall rule.
-    # This is the important part for Coral.
-    low_horizontal_angle=70.0,
-    low_horizontal_ratio=0.85,
-
-    # Shoulder / hip spread rule.
-    pair_horizontal_ratio=1.30,
-    pair_threshold_y=0.18,
-    pair_threshold_x=0.16,
-
-    # Motion thresholds.
-    fall_drop_speed=0.55,
-    soft_drop_speed=0.22,
-    motion_memory_sec=2.50,
-    descent_timeout_sec=3.00,
-
-    # Low drop check.
-    min_low_drop_norm=0.025,
-    min_low_drop_body_heights=0.08,
-
-    # Confirmation.
-    # 2 catches more falls, 3 reduces false positives.
-    # Use 3 for dataset testing first.
-    fall_frames=3,
-    high_confidence_increment=2,
+    multi_person_confirm_frames=2,
     alarm_hold_sec=5.0,
-
-    # Safety rules.
-    allow_static_lying=False,
-    allow_no_upright_if_very_fast=True,
-    very_fast_drop_speed=1.70,
-
-    bed_top_y=None,
 )
 # PoseNet keypoint names in google-coral/project-posenet.
 POSENET_NAME_TO_INDEX = {
@@ -194,6 +147,7 @@ CoralPoseNetDetector = CoralPoseNet
 
 def main() -> int:
     model = CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
+    detector = KeypointFallClassifier(FALL_CLASSIFIER_PATH, CLASSIFIER_CONFIG)
     start_iot_server(port=8000)
     options = AppOptions(
         title="Pi4 Coral PoseNet Fall Detection",
@@ -206,7 +160,7 @@ def main() -> int:
         mirror_image=MIRROR_IMAGE,
         debug_every_n_frames=DEBUG_EVERY_N_FRAMES,
     )
-    return run_app(model, CONFIG, options, state_sink=update_iot_state)
+    return run_app(model, detector, options, state_sink=update_iot_state)
 
 
 if __name__ == "__main__":

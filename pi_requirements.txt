@@ -36,6 +36,10 @@
 #
 # Start from the repository root:
 #   python main_pi.py
+#
+# The trained fall classifier is the checked-in JSON artifact under models/.
+# Its evaluator uses NumPy only: scikit-learn is deliberately not installed on
+# the Pi. The Edge TPU runs PoseNet; the small forest runs on the Pi 4 CPU.
 
 # Official Coral wheel repository. It contains CPython 3.9 wheels for both
 # 64-bit aarch64 and 32-bit armv7l Raspberry Pi OS.

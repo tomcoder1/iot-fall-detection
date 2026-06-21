@@ -7,14 +7,8 @@ from typing import Callable, Dict, List, Optional, Protocol, Tuple
 import cv2
 import numpy as np
 
-from detectors.fall_core import (
-    FallConfig,
-    FallDetector,
-    PersonState,
-    Pose,
-    SKELETON_EDGES,
-    pose_bbox_from_keypoints,
-)
+from detectors.fall_classifier import ClassifierState, KeypointFallClassifier
+from detectors.pose import Pose, SKELETON_EDGES, pose_bbox_from_keypoints
 
 
 class PoseModel(Protocol):
@@ -43,13 +37,13 @@ class AppOptions:
 
 def run_app(
     pose_model: PoseModel,
-    config: FallConfig,
+    detector: KeypointFallClassifier,
     options: AppOptions,
     state_sink: Optional[StateSink] = None,
 ) -> int:
-    """Run the shared fall-detection loop without changing fall-core behavior."""
+    """Run pose estimation followed by the learned keypoint classifier."""
 
-    detector = FallDetector(config)
+    config = detector.config
     cap = _open_camera(options)
 
     frame_idx = 0
@@ -63,7 +57,11 @@ def run_app(
         f"[INFO] Camera: {options.camera_width}x{options.camera_height} "
         f"at {options.camera_fps} FPS"
     )
-    print("[INFO] Rule: if 2+ people are visible, fall detection is OFF.")
+    print(
+        f"[INFO] Classifier: {detector.model.name}, threshold="
+        f"{detector.model.threshold:.2f}, confirmations={detector.model.confirmations}."
+    )
+    print("[INFO] If 2+ people are visible, fall detection is OFF.")
     if options.display:
         print("[INFO] Press q to quit.")
 
@@ -93,25 +91,19 @@ def run_app(
                 and multi_person_hits >= config.multi_person_confirm_frames
             )
             disabled_reason: Optional[str] = None
-            results: List[Tuple[Pose, PersonState]] = []
+            classifier_state: Optional[ClassifierState] = None
 
-            # These branches intentionally match the previously validated loops.
             if people_count == 0:
-                detector.reset()
-                fall_alarm_until = 0.0
-                fall_detected = False
+                detector.update(None, now)
+                fall_detected = now <= fall_alarm_until
                 disabled_reason = "NO PERSON"
             elif multi_person_disabled:
                 detector.reset()
-                fall_alarm_until = 0.0
-                fall_detected = False
+                fall_detected = now <= fall_alarm_until
                 disabled_reason = "MULTI-PERSON: DETECTION STOPPED"
             else:
-                results = detector.update(accepted[:1], now)
-                current_fall = any(
-                    state.last_status == "FALL" for state in detector.states.values()
-                )
-                if current_fall:
+                classifier_state = detector.update(accepted[0], now)
+                if classifier_state.triggered:
                     fall_alarm_until = now + config.alarm_hold_sec
                 fall_detected = now <= fall_alarm_until
 
@@ -120,7 +112,7 @@ def run_app(
             fps = processed_frames / elapsed
 
             if options.draw_pose:
-                _draw_results(frame, accepted, results, multi_person_disabled, config)
+                _draw_results(frame, accepted, classifier_state, multi_person_disabled, detector)
             draw_hud(
                 frame,
                 fall_detected,
@@ -142,10 +134,9 @@ def run_app(
                 )
 
             if options.debug_every_n_frames and frame_idx % options.debug_every_n_frames == 0:
-                debug_states = [state.debug for _, state in results]
                 print(
                     f"[DEBUG] frame={frame_idx} fps={fps:.1f} people={people_count} "
-                    f"fall_detected={fall_detected} states={debug_states}"
+                    f"fall_detected={fall_detected} classifier={classifier_state}"
                 )
 
             if options.display:
@@ -189,27 +180,26 @@ def _configure_camera(cap: cv2.VideoCapture, options: AppOptions) -> None:
 def _draw_results(
     frame: np.ndarray,
     accepted: List[Pose],
-    results: List[Tuple[Pose, PersonState]],
+    state: Optional[ClassifierState],
     multi_person_disabled: bool,
-    config: FallConfig,
+    detector: KeypointFallClassifier,
 ) -> None:
+    min_kpt_score = detector.config.min_kpt_score
     if multi_person_disabled:
         for pose in accepted:
-            draw_pose(frame, pose, None, config.min_kpt_score, disabled=True)
+            draw_pose(frame, pose, None, min_kpt_score, disabled=True)
         return
 
-    result_pose_ids = {id(pose) for pose, _ in results}
-    for pose, state in results:
-        draw_pose(frame, pose, state, config.min_kpt_score)
-    for pose in accepted:
-        if id(pose) not in result_pose_ids:
-            draw_pose(frame, pose, None, config.min_kpt_score, disabled=True)
+    if accepted:
+        draw_pose(frame, accepted[0], state, min_kpt_score)
+    for pose in accepted[1:]:
+        draw_pose(frame, pose, None, min_kpt_score, disabled=True)
 
 
 def draw_pose(
     frame: np.ndarray,
     pose: Pose,
-    state: Optional[PersonState],
+    state: Optional[ClassifierState],
     min_kpt_score: float,
     disabled: bool = False,
 ) -> None:
@@ -218,14 +208,10 @@ def draw_pose(
 
     if disabled:
         color = (0, 255, 255)
-    elif state is not None and state.last_status == "FALL":
+    elif state is not None and state.status == "FALL":
         color = (0, 0, 255)
-    elif state is not None and state.last_status == "LYING":
-        color = (255, 180, 0)
-    elif state is not None and state.last_status in {"POSSIBLE_FALL", "DESCENDING"}:
+    elif state is not None and state.status == "POSSIBLE_FALL":
         color = (0, 165, 255)
-    elif state is not None and state.last_status == "BENDING":
-        color = (255, 255, 0)
     else:
         color = (0, 200, 0)
 
@@ -260,13 +246,9 @@ def draw_pose(
     elif state is None:
         label = f"score={pose.score:.2f}"
     else:
-        debug = state.debug
         label = (
-            f"id={state.track_id} {state.last_status} "
-            f"cnt={debug.get('fall_counter', 0)} "
-            f"r={float(debug.get('ratio', 0)):.2f} "
-            f"a={float(debug.get('angle', -1)):.0f} "
-            f"v={float(debug.get('max_down_speed', 0)):.2f}"
+            f"{state.status} p={state.probability:.2f} "
+            f"count={state.consecutive}"
         )
     cv2.putText(
         frame,
