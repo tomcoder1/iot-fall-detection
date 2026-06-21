@@ -31,53 +31,57 @@ PROJECT_POSENET_DIR = PROJECT_ROOT / "project-posenet"
 MODEL_PATH = PROJECT_ROOT / "models/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite"
 
 CONFIG = FallConfig(
-    # Pose quality: Coral PoseNet is noisier than MoveNet.
-    min_pose_score=0.08,
-    min_kpt_score=0.05,
-    min_valid_keypoints=4,
-    min_body_area=0.008,
+    # Coral PoseNet quality filters.
+    # Keep these slightly loose, but not too loose.
+    min_pose_score=0.10,
+    min_kpt_score=0.06,
+    min_valid_keypoints=5,
+    min_body_area=0.010,
 
     # Multiple people.
     stop_when_multiple_people=True,
     multi_person_confirm_frames=3,
 
-    # Upright detection.
+    # Upright memory.
     upright_angle=65.0,
     upright_max_ratio=1.10,
-
-    # Normal horizontal fall rule.
-    horizontal_angle=55.0,
-    horizontal_ratio=1.15,
-
-    # Low / compact fall rule.
-    low_horizontal_angle=65.0,
-    low_horizontal_ratio=0.75,
-
-    # Upper-body / lower-body spread rule.
-    pair_horizontal_ratio=1.25,
-    pair_threshold_y=0.18,
-    pair_threshold_x=0.15,
-
-    # Motion.
-    fall_drop_speed=0.50,
-    soft_drop_speed=0.18,
-    motion_memory_sec=2.50,
-    descent_timeout_sec=3.00,
     upright_memory_sec=6.00,
 
-    # Low body check.
+    # Horizontal fall rule.
+    horizontal_angle=50.0,
+    horizontal_ratio=1.25,
+
+    # Low-body fall rule.
+    # This is the important part for Coral.
+    low_horizontal_angle=70.0,
+    low_horizontal_ratio=0.85,
+
+    # Shoulder / hip spread rule.
+    pair_horizontal_ratio=1.30,
+    pair_threshold_y=0.18,
+    pair_threshold_x=0.16,
+
+    # Motion thresholds.
+    fall_drop_speed=0.55,
+    soft_drop_speed=0.22,
+    motion_memory_sec=2.50,
+    descent_timeout_sec=3.00,
+
+    # Low drop check.
     min_low_drop_norm=0.025,
     min_low_drop_body_heights=0.08,
 
     # Confirmation.
-    fall_frames=2,
+    # 2 catches more falls, 3 reduces false positives.
+    # Use 3 for dataset testing first.
+    fall_frames=3,
     high_confidence_increment=2,
     alarm_hold_sec=5.0,
 
     # Safety rules.
     allow_static_lying=False,
     allow_no_upright_if_very_fast=True,
-    very_fast_drop_speed=1.60,
+    very_fast_drop_speed=1.70,
 
     bed_top_y=None,
 )
