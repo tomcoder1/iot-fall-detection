@@ -31,47 +31,56 @@ PROJECT_POSENET_DIR = PROJECT_ROOT / "project-posenet"
 MODEL_PATH = PROJECT_ROOT / "models/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite"
 
 CONFIG = FallConfig(
-    min_pose_score=0.10,
-    min_kpt_score=0.08,
-    min_valid_keypoints=5,
-    min_body_area=0.015,
+    # Pose quality: Coral PoseNet is noisier than MoveNet.
+    min_pose_score=0.08,
+    min_kpt_score=0.05,
+    min_valid_keypoints=4,
+    min_body_area=0.008,
 
+    # Multiple people.
     stop_when_multiple_people=True,
-    multi_person_confirm_frames=2,
+    multi_person_confirm_frames=3,
 
+    # Upright detection.
     upright_angle=65.0,
-    upright_max_ratio=1.00,
+    upright_max_ratio=1.10,
 
-    horizontal_angle=35.0,
-    horizontal_ratio=1.30,
+    # Normal horizontal fall rule.
+    horizontal_angle=55.0,
+    horizontal_ratio=1.15,
 
-    low_horizontal_angle=35.0,
-    low_horizontal_ratio=0.95,
+    # Low / compact fall rule.
+    low_horizontal_angle=65.0,
+    low_horizontal_ratio=0.75,
 
-    pair_horizontal_ratio=1.55,
-    pair_threshold_y=0.12,
-    pair_threshold_x=0.25,
+    # Upper-body / lower-body spread rule.
+    pair_horizontal_ratio=1.25,
+    pair_threshold_y=0.18,
+    pair_threshold_x=0.15,
 
-    fall_drop_speed=0.95,
-    soft_drop_speed=0.35,
-    motion_memory_sec=1.75,
-    descent_timeout_sec=2.25,
-    upright_memory_sec=5.00,
+    # Motion.
+    fall_drop_speed=0.50,
+    soft_drop_speed=0.18,
+    motion_memory_sec=2.50,
+    descent_timeout_sec=3.00,
+    upright_memory_sec=6.00,
 
-    min_low_drop_norm=0.08,
-    min_low_drop_body_heights=0.25,
+    # Low body check.
+    min_low_drop_norm=0.025,
+    min_low_drop_body_heights=0.08,
 
-    fall_frames=4,
+    # Confirmation.
+    fall_frames=2,
     high_confidence_increment=2,
     alarm_hold_sec=5.0,
 
+    # Safety rules.
     allow_static_lying=False,
     allow_no_upright_if_very_fast=True,
-    very_fast_drop_speed=2.50,
+    very_fast_drop_speed=1.60,
 
     bed_top_y=None,
 )
-
 # PoseNet keypoint names in google-coral/project-posenet.
 POSENET_NAME_TO_INDEX = {
     "NOSE": 0,
