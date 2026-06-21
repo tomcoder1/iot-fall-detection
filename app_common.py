@@ -24,7 +24,7 @@ class PoseModel(Protocol):
         ...
 
 
-StateSink = Callable[[np.ndarray, bool, str, int, float], None]
+StateSink = Callable[[np.ndarray, bool, str, int, float, Optional[str]], None]
 
 
 @dataclass(frozen=True)
@@ -132,7 +132,14 @@ def run_app(
 
             status = disabled_reason or ("FALL" if fall_detected else "OK")
             if state_sink is not None:
-                state_sink(frame, fall_detected, status, people_count, fps)
+                state_sink(
+                    frame,
+                    fall_detected,
+                    status,
+                    people_count,
+                    fps,
+                    disabled_reason,
+                )
 
             if options.debug_every_n_frames and frame_idx % options.debug_every_n_frames == 0:
                 debug_states = [state.debug for _, state in results]

@@ -61,7 +61,7 @@ CONFIG = FallConfig(
     min_low_drop_norm=0.08,
     min_low_drop_body_heights=0.25,
 
-    fall_frames=3,
+    fall_frames=4,
     high_confidence_increment=2,
     alarm_hold_sec=5.0,
 

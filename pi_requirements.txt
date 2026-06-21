@@ -1,0 +1,69 @@
+# Raspberry Pi 4 + Coral USB Accelerator runtime (CPython 3.9 only)
+#
+# Install repository tools, then add Coral's apt repository once:
+#   sudo apt update
+#   sudo apt install -y curl gpg
+#   curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+#     | sudo gpg --dearmor -o /usr/share/keyrings/coral-edgetpu.gpg
+#   echo "deb [signed-by=/usr/share/keyrings/coral-edgetpu.gpg] \
+#     https://packages.cloud.google.com/apt coral-edgetpu-stable main" \
+#     | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
+#
+# Raspberry Pi OS packages must be installed before creating the venv:
+#   sudo apt update
+#   sudo apt install -y python3.9 python3.9-venv python3.9-dev python3-pip \
+#       build-essential python3-opencv python3-numpy v4l-utils libedgetpu1-std
+#
+# OpenCV and NumPy intentionally come from Raspberry Pi OS. This avoids building
+# opencv-python on the Pi and keeps cv2 compatible with the OS camera/GUI stack.
+# Create the venv with access to those two system packages:
+#   python3.9 -m venv --system-site-packages .venv-pi
+#   . .venv-pi/bin/activate
+#   python -m pip install --upgrade "pip<26" setuptools wheel
+#   python -m pip install -r pi_requirements.txt
+#
+# Verify that the requested interpreter and native Coral runtime are active:
+#   python --version                         # must say Python 3.9.x
+#   python -c "import cv2, numpy; print(cv2.__version__, numpy.__version__)"
+#   python -c "import pycoral, tflite_runtime; print('Coral Python OK')"
+#   python -c "from pycoral.utils.edgetpu import list_edge_tpus; print(list_edge_tpus())"
+#   test -e "project-posenet/posenet_lib/$(uname -m)/posenet_decoder.so"
+#
+# If the project was copied from Windows onto 32-bit Pi OS, Git's armv7l
+# symlink might have become a plain text file. Repair it from the repo root:
+#   rm -f project-posenet/posenet_lib/armv7l
+#   ln -s armv7a project-posenet/posenet_lib/armv7l
+#
+# Start from the repository root:
+#   python main_pi.py
+
+# Official Coral wheel repository. It contains CPython 3.9 wheels for both
+# 64-bit aarch64 and 32-bit armv7l Raspberry Pi OS.
+--find-links https://google-coral.github.io/py-repo/pycoral/
+--find-links https://google-coral.github.io/py-repo/tflite-runtime/
+
+# Coral PoseNet runtime used by project-posenet/pose_engine.py.
+pycoral==2.0.0
+tflite-runtime==2.5.0.post1
+
+# Keep the old Coral/TFLite native extensions on the NumPy 1.x ABI. The
+# Raspberry Pi OS package satisfies this constraint when --system-site-packages
+# is used; the upper bound prevents pip from silently selecting NumPy 2.x.
+numpy>=1.19.5,<2
+
+# Image conversion used by the Pi PoseNet adapter. This is the last Pillow
+# feature line used here that officially supports CPython 3.9.
+Pillow==11.3.0
+
+# IoT HTTP, WebSocket, status, metrics, and MJPEG server. Newer FastAPI and
+# Uvicorn releases require Python 3.10, so keep these Python 3.9 pins together.
+fastapi==0.115.14
+pydantic==2.11.7
+uvicorn==0.34.3
+
+# CPU and memory metrics exposed by /metrics.
+psutil==7.2.2
+
+# Firebase Cloud Messaging sender. Version 7.4.0 officially supports Python
+# 3.9; credentials remain optional until push notifications are configured.
+firebase-admin==7.4.0

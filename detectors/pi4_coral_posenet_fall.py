@@ -1,6 +1,6 @@
 from __future__ import annotations
 from iot_server import start_iot_server, update_iot_state
-
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -61,7 +61,7 @@ CONFIG = FallConfig(
     min_low_drop_norm=0.08,
     min_low_drop_body_heights=0.25,
 
-    fall_frames=3,
+    fall_frames=4,
     high_confidence_increment=2,
     alarm_hold_sec=5.0,
 
@@ -96,23 +96,50 @@ POSENET_NAME_TO_INDEX = {
 
 class CoralPoseNet:
     def __init__(self, model_path: Path, project_dir: Path) -> None:
+        model_path = Path(model_path).resolve()
+        project_dir = Path(project_dir).resolve()
+
         if not project_dir.exists():
             raise FileNotFoundError(
                 f"Missing {project_dir}. Clone it with:\n"
                 "git clone https://github.com/google-coral/project-posenet.git"
             )
+
         if not model_path.exists():
             raise FileNotFoundError(f"Missing PoseNet model: {model_path}")
 
-        sys.path.insert(0, str(project_dir.resolve()))
-        from pose_engine import PoseEngine  # type: ignore
+        pose_engine_path = project_dir / "pose_engine.py"
+        if not pose_engine_path.exists():
+            raise FileNotFoundError(f"Missing pose_engine.py: {pose_engine_path}")
 
-        self.engine = PoseEngine(str(model_path))
+        decoder_path = (
+            project_dir
+            / "posenet_lib"
+            / os.uname().machine
+            / "posenet_decoder.so"
+        )
+        if not decoder_path.exists():
+            raise FileNotFoundError(f"Missing PoseNet decoder: {decoder_path}")
+
+        if str(project_dir) not in sys.path:
+            sys.path.insert(0, str(project_dir))
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(str(project_dir))
+            from pose_engine import PoseEngine  # type: ignore
+
+            self.engine = PoseEngine(str(model_path))
+        finally:
+            os.chdir(old_cwd)
+
         shape = self.engine.get_input_tensor_shape()
         self.input_height = int(shape[1])
         self.input_width = int(shape[2])
 
         print("[MODEL] Coral PoseNet loaded:", model_path)
+        print("[MODEL] project-posenet:", project_dir)
+        print("[MODEL] decoder:", decoder_path)
         print("[MODEL] input shape:", list(shape))
 
     def infer(self, frame_bgr: np.ndarray) -> Tuple[List[Pose], Dict[str, object]]:

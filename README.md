@@ -36,10 +36,34 @@ from the repository root so local modules are importable.
 The Pi also exposes:
 
 - `GET http://<pi-ip>:8000/status`
+- `GET http://<pi-ip>:8000/metrics`
 - `GET http://<pi-ip>:8000/video_feed`
+- `GET http://<pi-ip>:8000/stream/status`
+- `POST http://<pi-ip>:8000/stream/start`
+- `POST http://<pi-ip>:8000/stream/stop`
+- `POST http://<pi-ip>:8000/notifications/register`
+- `POST http://<pi-ip>:8000/notifications/unregister`
+- `GET http://<pi-ip>:8000/notifications/status`
 - `WS  ws://<pi-ip>:8000/ws`
 
+See [MOBILE_INTEGRATION.md](MOBILE_INTEGRATION.md) for Flutter setup, event
+examples, and the end-to-end demo flow.
+
 Set `DISPLAY = False` in `detectors/pi4_coral_posenet_fall.py` for a headless Pi.
+
+## Firebase push notifications
+
+The Pi sends real system notifications through Firebase Cloud Messaging. Create
+a Firebase service-account JSON file, keep it outside source control, and set:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/home/pi/fall-detection/firebase-service-account.json
+```
+
+The Flutter app registers its FCM device token with the Pi whenever it connects.
+Firebase credentials are optional at process startup: detection and local
+WebSocket alerts continue working, while `/notifications/status` reports any
+configuration or delivery error.
 
 ## Architecture
 

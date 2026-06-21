@@ -97,7 +97,7 @@ class FallConfig:
     min_low_drop_body_heights: float = 0.25
 
     # Confirmation.
-    fall_frames: int = 3
+    fall_frames: int = 4
     high_confidence_increment: int = 2
     alarm_hold_sec: float = 5.0
 
