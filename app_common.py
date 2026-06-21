@@ -59,9 +59,13 @@ def run_app(
     )
     print(
         f"[INFO] Classifier: {detector.model.name}, threshold="
-        f"{detector.model.threshold:.2f}, confirmations={detector.model.confirmations}."
+        f"{detector.model.threshold:.2f}, votes={detector.model.required_votes}/"
+        f"{detector.model.vote_window}."
     )
-    print("[INFO] If 2+ people are visible, fall detection is OFF.")
+    if config.stop_when_multiple_people:
+        print("[INFO] If 2+ people are visible, fall detection is OFF.")
+    else:
+        print("[INFO] Detection follows the highest-confidence pose.")
     if options.display:
         print("[INFO] Press q to quit.")
 
@@ -94,7 +98,9 @@ def run_app(
             classifier_state: Optional[ClassifierState] = None
 
             if people_count == 0:
-                detector.update(None, now)
+                classifier_state = detector.update(None, now)
+                if classifier_state.triggered:
+                    fall_alarm_until = now + config.alarm_hold_sec
                 fall_detected = now <= fall_alarm_until
                 disabled_reason = "NO PERSON"
             elif multi_person_disabled:
@@ -122,7 +128,7 @@ def run_app(
                 disabled_reason,
             )
 
-            status = disabled_reason or ("FALL" if fall_detected else "OK")
+            status = "FALL" if fall_detected else (disabled_reason or "OK")
             if state_sink is not None:
                 state_sink(
                     frame,
@@ -248,7 +254,7 @@ def draw_pose(
     else:
         label = (
             f"{state.status} p={state.probability:.2f} "
-            f"count={state.consecutive}"
+            f"votes={state.votes}"
         )
     cv2.putText(
         frame,
@@ -269,7 +275,12 @@ def draw_hud(
     model_info: Dict[str, object],
     disabled_reason: Optional[str],
 ) -> None:
-    if disabled_reason:
+    if fall_detected:
+        status_text = "fall_detected = True"
+        if disabled_reason:
+            status_text += f" | {disabled_reason}"
+        status_color = (0, 0, 255)
+    elif disabled_reason:
         status_text = f"fall_detected = False | {disabled_reason}"
         status_color = (0, 255, 255)
     else:

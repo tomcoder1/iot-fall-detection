@@ -18,7 +18,7 @@ from .pose import Pose
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "models/movenet_multipose_lightning.tflite"
 MODEL_PATH_FALLBACK = Path("movenet_multipose_lightning.tflite")
-FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier.json"
+FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier_windows.json"
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
@@ -34,7 +34,7 @@ CLASSIFIER_CONFIG = ClassifierConfig(
     min_kpt_score=0.06,
     min_valid_keypoints=4,
     min_body_area=0.0,
-    stop_when_multiple_people=True,
+    stop_when_multiple_people=False,
     multi_person_confirm_frames=2,
     alarm_hold_sec=5.0,
 )
@@ -207,7 +207,9 @@ MoveNetMultiPoseDetector = MoveNetMultiPose
 
 def main() -> int:
     model = MoveNetMultiPose(resolve_model_path(), NUM_THREADS, INPUT_SIZE)
-    detector = KeypointFallClassifier(FALL_CLASSIFIER_PATH, CLASSIFIER_CONFIG)
+    detector = KeypointFallClassifier(
+        FALL_CLASSIFIER_PATH, CLASSIFIER_CONFIG, expected_platform="windows"
+    )
     options = AppOptions(
         title="Windows MoveNet MultiPose Fall Detection",
         camera_index=CAMERA_INDEX,

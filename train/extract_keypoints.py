@@ -6,12 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from detectors.windows_movenet_multipose_fall import (
-    INPUT_SIZE,
-    NUM_THREADS,
-    MoveNetMultiPose,
-    resolve_model_path,
-)
+from app_common import PoseModel
 from train.dataset import cache_path, load_records
 
 
@@ -20,7 +15,7 @@ def _fps(capture: cv2.VideoCapture) -> float:
     return value if np.isfinite(value) and value > 1.0 else 30.0
 
 
-def extract_video(model: MoveNetMultiPose, path: Path) -> tuple[np.ndarray, np.ndarray, float]:
+def extract_video(model: PoseModel, path: Path) -> tuple[np.ndarray, np.ndarray, float]:
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
         raise RuntimeError(f"Could not open video: {path}")
@@ -54,17 +49,35 @@ def extract_video(model: MoveNetMultiPose, path: Path) -> tuple[np.ndarray, np.n
     )
 
 
+def create_pose_model(platform: str) -> PoseModel:
+    if platform == "windows":
+        from detectors.windows_movenet_multipose_fall import (
+            INPUT_SIZE,
+            NUM_THREADS,
+            MoveNetMultiPose,
+            resolve_model_path,
+        )
+
+        return MoveNetMultiPose(resolve_model_path(), NUM_THREADS, INPUT_SIZE)
+
+    from detectors.pi4_coral_posenet_fall import MODEL_PATH, PROJECT_POSENET_DIR, CoralPoseNet
+
+    return CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--platform", choices=("windows", "pi"), default="windows")
     parser.add_argument("--dataset", type=Path, default=Path("dataset"))
-    parser.add_argument("--cache", type=Path, default=Path("train/cache"))
+    parser.add_argument("--cache", type=Path)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
+    cache_root = args.cache or Path("train/cache") / args.platform
     records = load_records(args.dataset)
-    model = MoveNetMultiPose(resolve_model_path(), NUM_THREADS, INPUT_SIZE)
+    model = create_pose_model(args.platform)
     for number, record in enumerate(records, 1):
-        output = cache_path(args.cache, record)
+        output = cache_path(cache_root, record)
         if output.exists() and not args.force:
             print(f"[{number:03d}/{len(records)}] cached {record.path}")
             continue
@@ -75,6 +88,7 @@ def main() -> int:
             keypoints=keypoints,
             pose_scores=pose_scores,
             fps=np.float32(fps),
+            platform=np.asarray(args.platform),
         )
         print(f"[{number:03d}/{len(records)}] {len(keypoints):4d} frames {record.path}")
     return 0

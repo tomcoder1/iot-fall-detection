@@ -7,7 +7,7 @@ from typing import List, Optional, Sequence
 
 import numpy as np
 
-from .keypoint_features import FEATURE_COUNT, FEATURE_VERSION, feature_from_history
+from .keypoint_features import FEATURE_COUNTS, FEATURE_VERSION, feature_from_history
 from .pose import Pose, pose_bbox_from_keypoints
 
 
@@ -27,7 +27,7 @@ class ClassifierConfig:
 @dataclass(frozen=True)
 class ClassifierState:
     probability: float
-    consecutive: int
+    votes: int
     threshold: float
     status: str
     triggered: bool
@@ -36,27 +36,38 @@ class ClassifierState:
 class ForestArtifact:
     """Small, dependency-free evaluator for the exported sklearn forest."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, expected_platform: Optional[str] = None) -> None:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        if payload.get("format_version") != 1 or payload.get("classifier") != "forest":
+        if payload.get("format_version") not in (1, 2) or payload.get("classifier") != "forest":
             raise ValueError(f"Unsupported fall classifier artifact: {path}")
-        if payload.get("feature_version") != FEATURE_VERSION:
+        if payload.get("feature_version") not in FEATURE_COUNTS:
             raise ValueError(
-                f"Feature version mismatch: model={payload.get('feature_version')} "
-                f"runtime={FEATURE_VERSION}"
+                f"Unsupported model feature version: {payload.get('feature_version')}"
             )
 
         self.name = str(payload.get("name", "forest"))
+        self.feature_version = int(payload["feature_version"])
+        self.platform = payload.get("platform")
+        if expected_platform and self.platform and self.platform != expected_platform:
+            raise ValueError(
+                f"Wrong classifier for {expected_platform}: model is for {self.platform}"
+            )
         self.threshold = float(payload["threshold"])
-        self.confirmations = int(payload["confirmations"])
+        if payload["format_version"] == 1:
+            self.vote_window = int(payload["confirmations"])
+            self.required_votes = int(payload["confirmations"])
+        else:
+            self.vote_window = int(payload["vote_window"])
+            self.required_votes = int(payload["required_votes"])
         self.trees = payload["trees"]
         if not self.trees:
             raise ValueError("Fall classifier contains no trees")
 
     def predict_probability(self, features: np.ndarray) -> float:
         row = np.asarray(features, dtype=np.float32).reshape(-1)
-        if row.size != FEATURE_COUNT:
-            raise ValueError(f"Expected {FEATURE_COUNT} features, got {row.size}")
+        expected_count = FEATURE_COUNTS[self.feature_version]
+        if row.size != expected_count:
+            raise ValueError(f"Expected {expected_count} features, got {row.size}")
 
         total = 0.0
         for tree in self.trees:
@@ -75,11 +86,16 @@ class ForestArtifact:
 class KeypointFallClassifier:
     """Stateful temporal fall classifier shared by Windows and Pi runtimes."""
 
-    def __init__(self, model_path: Path, config: ClassifierConfig = ClassifierConfig()) -> None:
-        self.model = ForestArtifact(model_path)
+    def __init__(
+        self,
+        model_path: Path,
+        config: ClassifierConfig = ClassifierConfig(),
+        expected_platform: Optional[str] = None,
+    ) -> None:
+        self.model = ForestArtifact(model_path, expected_platform)
         self.config = config
         self.history: List[tuple[float, np.ndarray, float]] = []
-        self.consecutive = 0
+        self.recent_votes: List[int] = []
 
     def accepted_poses(self, poses: Sequence[Pose]) -> List[Pose]:
         accepted: List[Pose] = []
@@ -112,21 +128,29 @@ class KeypointFallClassifier:
         while len(self.history) > 1 and self.history[1][0] < cutoff:
             self.history.pop(0)
 
-        features = feature_from_history(self.history, float(now))
+        features = feature_from_history(
+            self.history, float(now), self.model.feature_version
+        )
         probability = self.model.predict_probability(features)
-        positive = pose is not None and probability >= self.model.threshold
-        self.consecutive = self.consecutive + 1 if positive else 0
-        triggered = self.consecutive >= self.model.confirmations
+        # A pose often disappears for a few frames when the person reaches the
+        # floor. The temporal feature history still carries valid fall evidence,
+        # and training/tuning includes these missing-pose frames.
+        positive = probability >= self.model.threshold
+        self.recent_votes.append(int(positive))
+        if len(self.recent_votes) > self.model.vote_window:
+            self.recent_votes.pop(0)
+        evidence = sum(self.recent_votes)
+        triggered = evidence >= self.model.required_votes
 
         if triggered:
             status = "FALL"
-        elif positive:
+        elif evidence:
             status = "POSSIBLE_FALL"
         else:
             status = "OK"
         return ClassifierState(
             probability=probability,
-            consecutive=self.consecutive,
+            votes=evidence,
             threshold=self.model.threshold,
             status=status,
             triggered=triggered,
@@ -134,4 +158,4 @@ class KeypointFallClassifier:
 
     def reset(self) -> None:
         self.history.clear()
-        self.consecutive = 0
+        self.recent_votes.clear()

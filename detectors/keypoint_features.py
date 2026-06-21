@@ -5,11 +5,16 @@ from typing import Iterable, Sequence
 import numpy as np
 
 
-FEATURE_VERSION = 1
+FEATURE_VERSION = 2
 HISTORY_OFFSETS_SEC = (1.5, 1.0, 0.5, 0.25, 0.0)
 MIN_KEYPOINT_SCORE = 0.06
 SNAPSHOT_FEATURES = 62
-FEATURE_COUNT = SNAPSHOT_FEATURES * len(HISTORY_OFFSETS_SEC) + 1
+DELTA_COUNT = len(HISTORY_OFFSETS_SEC) - 1
+FEATURE_COUNT = SNAPSHOT_FEATURES * (len(HISTORY_OFFSETS_SEC) + DELTA_COUNT) + 1
+FEATURE_COUNTS = {
+    1: SNAPSHOT_FEATURES * len(HISTORY_OFFSETS_SEC) + 1,
+    2: FEATURE_COUNT,
+}
 
 LEFT_SHOULDER = 5
 RIGHT_SHOULDER = 6
@@ -77,18 +82,39 @@ def _snapshot_features(keypoints: np.ndarray, pose_score: float) -> np.ndarray:
     return result
 
 
+def _assemble_features(
+    snapshots: Sequence[np.ndarray], coverage: float, feature_version: int
+) -> np.ndarray:
+    if feature_version == 1:
+        return np.concatenate(
+            (*snapshots, np.asarray([coverage], dtype=np.float32))
+        )
+    if feature_version != 2:
+        raise ValueError(f"Unsupported feature version: {feature_version}")
+    # Explicit motion terms let shallow trees split on changes directly instead
+    # of approximating subtraction through several independent branches.
+    deltas = [
+        snapshots[index + 1] - snapshots[index]
+        for index in range(len(snapshots) - 1)
+    ]
+    return np.concatenate(
+        (*snapshots, *deltas, np.asarray([coverage], dtype=np.float32))
+    )
+
+
 def feature_at_frame(
     keypoints: np.ndarray,
     pose_scores: np.ndarray,
     fps: float,
     frame_index: int,
+    feature_version: int = FEATURE_VERSION,
 ) -> np.ndarray:
     snapshots = []
     for offset in HISTORY_OFFSETS_SEC:
         index = max(0, frame_index - int(round(offset * fps)))
         snapshots.append(_snapshot_features(keypoints[index], float(pose_scores[index])))
     coverage = min(1.0, frame_index / max(1.0, HISTORY_OFFSETS_SEC[0] * fps))
-    return np.concatenate((*snapshots, np.asarray([coverage], dtype=np.float32)))
+    return _assemble_features(snapshots, coverage, feature_version)
 
 
 def features_for_indices(
@@ -96,18 +122,24 @@ def features_for_indices(
     pose_scores: np.ndarray,
     fps: float,
     indices: Iterable[int],
+    feature_version: int = FEATURE_VERSION,
 ) -> np.ndarray:
-    rows = [feature_at_frame(keypoints, pose_scores, fps, int(index)) for index in indices]
+    rows = [
+        feature_at_frame(keypoints, pose_scores, fps, int(index), feature_version)
+        for index in indices
+    ]
     if not rows:
-        return np.empty((0, FEATURE_COUNT), dtype=np.float32)
+        return np.empty((0, FEATURE_COUNTS[feature_version]), dtype=np.float32)
     return np.stack(rows).astype(np.float32, copy=False)
 
 
 def feature_from_history(
-    history: Sequence[tuple[float, np.ndarray, float]], now: float
+    history: Sequence[tuple[float, np.ndarray, float]],
+    now: float,
+    feature_version: int = FEATURE_VERSION,
 ) -> np.ndarray:
     if not history:
-        return np.zeros(FEATURE_COUNT, dtype=np.float32)
+        return np.zeros(FEATURE_COUNTS[feature_version], dtype=np.float32)
     times = np.asarray([item[0] for item in history], dtype=np.float64)
     snapshots = []
     for offset in HISTORY_OFFSETS_SEC:
@@ -117,4 +149,4 @@ def feature_from_history(
         _, keypoints, score = history[index]
         snapshots.append(_snapshot_features(keypoints, float(score)))
     coverage = min(1.0, max(0.0, now - float(times[0])) / HISTORY_OFFSETS_SEC[0])
-    return np.concatenate((*snapshots, np.asarray([coverage], dtype=np.float32)))
+    return _assemble_features(snapshots, coverage, feature_version)

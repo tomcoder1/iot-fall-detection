@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import math
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import cv2
 
@@ -41,6 +41,7 @@ def process_video(
     predicted_fall = False
     fall_frame = ""
     peak_probability = 0.0
+    peak_votes = 0
     try:
         while True:
             ok, frame = cap.read()
@@ -50,14 +51,12 @@ def process_video(
             now = frame_index / fps
             poses, _ = model.infer(frame)
             accepted = detector.accepted_poses(poses)
-            if len(accepted) == 1:
+            if accepted:
                 state = detector.update(accepted[0], now)
-            elif not accepted:
-                state = detector.update(None, now)
             else:
-                detector.reset()
-                continue
+                state = detector.update(None, now)
             peak_probability = max(peak_probability, state.probability)
+            peak_votes = max(peak_votes, state.votes)
             if state.triggered and not predicted_fall:
                 predicted_fall = True
                 fall_frame = frame_index
@@ -73,6 +72,7 @@ def process_video(
         "fps": fps,
         "fall_frame": fall_frame,
         "peak_probability": peak_probability,
+        "peak_votes": peak_votes,
     }
 
 
@@ -82,8 +82,11 @@ def run_dataset_test(
     dataset_root: Path,
     csv_path: Path,
     title: str,
+    video_keys: Optional[Set[str]] = None,
 ) -> int:
     videos = find_videos(dataset_root)
+    if video_keys is not None:
+        videos = [item for item in videos if item[1].as_posix() in video_keys]
     if not videos:
         raise RuntimeError(f"No videos found under {dataset_root.resolve()}")
 
@@ -99,7 +102,8 @@ def run_dataset_test(
         fn += int(truth == "FALL" and pred == "NO FALL")
         print(
             f"[{index:03d}/{len(videos)}] true={truth:<4} pred={pred:<7} "
-            f"peak={float(row['peak_probability']):.3f} fall_frame={row['fall_frame']} {path}"
+            f"peak={float(row['peak_probability']):.3f} votes={row['peak_votes']}/"
+            f"{detector.model.required_votes} fall_frame={row['fall_frame']} {path}"
         )
 
     total = tp + fp + tn + fn

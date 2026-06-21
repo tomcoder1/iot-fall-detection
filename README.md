@@ -1,9 +1,11 @@
 # IoT fall detection
 
-The Windows and Raspberry Pi applications share a trained temporal keypoint
-classifier. MoveNet or Coral PoseNet supplies 17 normalized keypoints; a compact
-random forest evaluates 1.5 seconds of keypoint history. The portable model is
-`models/fall_classifier.json` and needs only NumPy at runtime.
+Windows and Raspberry Pi use separate temporal keypoint classifiers because
+MoveNet and Coral PoseNet produce different keypoint distributions. Each compact
+random forest evaluates 1.5 seconds of history and needs only NumPy at runtime:
+
+- `models/fall_classifier_windows.json`
+- `models/fall_classifier_pi.json`
 
 ## Windows
 
@@ -68,10 +70,10 @@ configuration or delivery error.
 ## Architecture
 
 ```text
-Windows MoveNet ----\
-                     > Pose[] -> keypoint history -> random forest -> alarm/HUD
-Pi Coral PoseNet ---/                                      |
-                                                           +-> Pi IoT server
+Windows MoveNet -> Windows forest --\
+                                   > alarm/HUD
+Pi Coral PoseNet -> Pi forest -----/     |
+                                         +-> Pi IoT server
 ```
 
 ## Training and held-out test
@@ -79,11 +81,26 @@ Pi Coral PoseNet ---/                                      |
 The GMDCSA24 split is random, stratified, deterministic, and video-level: 75%
 training and 25% held out. Reproduce extraction, model selection, and evaluation:
 
+Windows extraction and training:
+
 ```powershell
 uv pip install --python .venv\Scripts\python.exe -r train\requirements.txt
-.venv\Scripts\python.exe -m train.extract_keypoints
-.venv\Scripts\python.exe -m train.train_classifier
+.venv\Scripts\python.exe -m train.extract_keypoints --platform windows
+.venv\Scripts\python.exe -m train.train_classifier --platform windows
 ```
 
-Results and the exact split are in `train/report.json`. Only the old detector's
-recorded benchmark remains for comparison; its implementation has been removed.
+Pi keypoints must be extracted on the Pi, then the cache is trained on Windows:
+
+```bash
+python -m train.extract_keypoints --platform pi
+```
+
+```powershell
+.venv\Scripts\python.exe -m train.train_classifier --platform pi
+```
+
+Exact splits and metrics are in `train/report_windows.json` and
+`train/report_pi.json`.
+
+`test_win.py` and `test_pi.py` test only the held-out 25% by default. Pass
+`--all` when you intentionally want to include training videos.

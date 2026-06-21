@@ -1,5 +1,4 @@
 from __future__ import annotations
-from iot_server import start_iot_server, update_iot_state
 import os
 import sys
 from pathlib import Path
@@ -26,7 +25,7 @@ DEBUG_EVERY_N_FRAMES = 30
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_POSENET_DIR = PROJECT_ROOT / "project-posenet"
 MODEL_PATH = PROJECT_ROOT / "models/posenet_mobilenet_v1_075_481_641_quant_decoder_edgetpu.tflite"
-FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier.json"
+FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier_pi.json"
 
 CLASSIFIER_CONFIG = ClassifierConfig(
     # Match the quality filters used while extracting the training data.
@@ -34,7 +33,7 @@ CLASSIFIER_CONFIG = ClassifierConfig(
     min_kpt_score=0.06,
     min_valid_keypoints=4,
     min_body_area=0.0,
-    stop_when_multiple_people=True,
+    stop_when_multiple_people=False,
     multi_person_confirm_frames=2,
     alarm_hold_sec=5.0,
 )
@@ -146,8 +145,12 @@ CoralPoseNetDetector = CoralPoseNet
 
 
 def main() -> int:
+    from iot_server import start_iot_server, update_iot_state
+
     model = CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
-    detector = KeypointFallClassifier(FALL_CLASSIFIER_PATH, CLASSIFIER_CONFIG)
+    detector = KeypointFallClassifier(
+        FALL_CLASSIFIER_PATH, CLASSIFIER_CONFIG, expected_platform="pi"
+    )
     start_iot_server(port=8000)
     options = AppOptions(
         title="Pi4 Coral PoseNet Fall Detection",
