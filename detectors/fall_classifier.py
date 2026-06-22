@@ -19,12 +19,6 @@ class ClassifierConfig:
     min_kpt_score: float = 0.06
     min_valid_keypoints: int = 4
     min_body_area: float = 0.0
-    max_body_area: Optional[float] = None
-    max_shoulder_span: Optional[float] = None
-    max_face_span: Optional[float] = None
-    blocked_frame_std: Optional[float] = None
-    blocked_dark_mean: Optional[float] = None
-    blocked_bright_mean: Optional[float] = None
     stop_when_multiple_people: bool = True
     multi_person_confirm_frames: int = 2
     alarm_hold_sec: float = 5.0
@@ -118,49 +112,8 @@ class KeypointFallClassifier:
             ymin, xmin, ymax, xmax = bbox
             if (ymax - ymin) * (xmax - xmin) < self.config.min_body_area:
                 continue
-            if self.pose_is_too_close(pose):
-                continue
             accepted.append(pose)
         return sorted(accepted, key=lambda item: item.score, reverse=True)
-
-    def pose_is_too_close(self, pose: Pose) -> bool:
-        """Reject pose geometry outside the size range seen during Pi training."""
-
-        points = np.asarray(pose.keypoints, dtype=np.float32)
-        valid = points[:, 2] >= self.config.min_kpt_score
-        if (
-            pose.score < self.config.min_pose_score
-            or int(np.sum(valid)) < self.config.min_valid_keypoints
-        ):
-            return False
-        bbox = pose_bbox_from_keypoints(points, self.config.min_kpt_score)
-        if bbox is not None and self.config.max_body_area is not None:
-            ymin, xmin, ymax, xmax = bbox
-            if (ymax - ymin) * (xmax - xmin) > self.config.max_body_area:
-                return True
-
-        def span(left: int, right: int) -> Optional[float]:
-            if (
-                points[left, 2] < self.config.min_kpt_score
-                or points[right, 2] < self.config.min_kpt_score
-            ):
-                return None
-            return abs(float(points[left, 1] - points[right, 1]))
-
-        shoulder_span = span(5, 6)
-        if (
-            shoulder_span is not None
-            and self.config.max_shoulder_span is not None
-            and shoulder_span > self.config.max_shoulder_span
-        ):
-            return True
-
-        face_span = span(3, 4)
-        return bool(
-            face_span is not None
-            and self.config.max_face_span is not None
-            and face_span > self.config.max_face_span
-        )
 
     def update(self, pose: Optional[Pose], now: float) -> ClassifierState:
         if pose is None:

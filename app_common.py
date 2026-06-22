@@ -51,7 +51,6 @@ def run_app(
     started_at = time.monotonic()
     fall_alarm_until = 0.0
     multi_person_hits = 0
-    obstructed_frame_hits = 0
 
     print(f"[INFO] Started {options.title}.")
     print(
@@ -83,12 +82,6 @@ def run_app(
 
             now = time.monotonic()
             poses, model_info = pose_model.infer(frame)
-            visually_blocked = _frame_is_visually_blocked(frame, config)
-            obstructed_frame_hits = (
-                obstructed_frame_hits + 1 if visually_blocked else 0
-            )
-            person_too_close = any(detector.pose_is_too_close(pose) for pose in poses)
-            camera_blocked = obstructed_frame_hits >= 3
             accepted = detector.accepted_poses(poses)
             people_count = len(accepted)
 
@@ -104,14 +97,7 @@ def run_app(
             disabled_reason: Optional[str] = None
             classifier_state: Optional[ClassifierState] = None
 
-            if camera_blocked or person_too_close:
-                detector.reset()
-                fall_alarm_until = 0.0
-                fall_detected = False
-                disabled_reason = (
-                    "PERSON TOO CLOSE" if person_too_close else "CAMERA BLOCKED"
-                )
-            elif people_count == 0:
+            if people_count == 0:
                 classifier_state = detector.update(None, now)
                 if classifier_state.triggered:
                     fall_alarm_until = now + config.alarm_hold_sec
@@ -170,25 +156,6 @@ def run_app(
 
     print("[INFO] Done.")
     return 0
-
-
-def _frame_is_visually_blocked(frame: np.ndarray, config) -> bool:
-    if (
-        config.blocked_frame_std is None
-        and config.blocked_dark_mean is None
-        and config.blocked_bright_mean is None
-    ):
-        return False
-
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    sample = cv2.resize(gray, (64, 48), interpolation=cv2.INTER_AREA)
-    mean = float(np.mean(sample))
-    std = float(np.std(sample))
-    if config.blocked_dark_mean is not None and mean <= config.blocked_dark_mean:
-        return True
-    if config.blocked_bright_mean is not None and mean >= config.blocked_bright_mean:
-        return True
-    return config.blocked_frame_std is not None and std <= config.blocked_frame_std
 
 
 def _open_camera(options: AppOptions) -> cv2.VideoCapture:
