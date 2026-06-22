@@ -27,10 +27,6 @@ except ImportError:  # Optional on a minimal Raspberry Pi install.
     psutil = None
 
 
-ALERT_COOLDOWN_SEC = 45.0
-if not 30.0 <= ALERT_COOLDOWN_SEC <= 60.0:
-    raise ValueError("ALERT_COOLDOWN_SEC must be between 30 and 60 seconds")
-
 ALERT_MESSAGE = "possible fall detected"
 app = FastAPI(title="Fall Detection IoT API")
 
@@ -42,7 +38,6 @@ _frame_sequence = 0
 _active_stream_clients = 0
 _stream_requested = False
 _previous_fall = False
-_last_alert_monotonic: Optional[float] = None
 
 _state: Dict[str, object] = {
     "fall_detected": False,
@@ -92,7 +87,7 @@ def update_iot_state(
     """Receive one raw camera frame and the latest detection state."""
 
     global _latest_frame, _latest_frame_monotonic, _frame_sequence
-    global _previous_fall, _last_alert_monotonic
+    global _previous_fall
 
     now_monotonic = time.monotonic()
     new_fall = bool(fall_detected)
@@ -105,11 +100,7 @@ def update_iot_state(
         _frame_sequence += 1
 
         rising_edge = new_fall and not _previous_fall
-        cooldown_ready = (
-            _last_alert_monotonic is None
-            or now_monotonic - _last_alert_monotonic >= ALERT_COOLDOWN_SEC
-        )
-        if rising_edge and cooldown_ready:
+        if rising_edge:
             timestamp = datetime.now().astimezone()
             event_id = timestamp.strftime("%Y%m%d-%H%M%S")
             iso_timestamp = timestamp.isoformat(timespec="seconds")
@@ -123,7 +114,6 @@ def update_iot_state(
             _state["latest_alert"] = alert
             _state["last_alert_time"] = iso_timestamp
             _state["alert_count"] = int(_state["alert_count"]) + 1
-            _last_alert_monotonic = now_monotonic
             push_alert = alert
 
         _previous_fall = new_fall
