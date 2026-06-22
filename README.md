@@ -73,9 +73,6 @@ python -m pip install -r pi_requirements.txt
 python -m pip install "numpy<2" opencv-python
 ```
 
-The virtual environment uses the OS builds of OpenCV and NumPy, avoiding a slow
-OpenCV build and preserving compatibility with Coral's NumPy 1.x ABI.
-
 Verify the installation from the repository root:
 
 ```bash
@@ -128,7 +125,7 @@ From another device on the same network, open the following URL to confirm that
 the server is reachable, replacing the address with the Pi's IP:
 
 ```text
-http://192.168.1.50:8000/status
+http://<PI-IP>:8000/status
 ```
 
 The server also provides `/metrics`, `/video_feed`, `/stream/status`, notification
