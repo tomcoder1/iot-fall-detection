@@ -17,15 +17,6 @@ RANDOM_SEED = 42
 SAMPLE_HZ = 10.0
 POSITIVE_DURATION_SEC = 2.0
 
-# Recorded once on seed 42 held-out split before the rule detector
-# was retired. Keeping the numbers preserves the model-selection comparison
-# without carrying obsolete production code.
-RETIRED_RULE_METRICS = {
-    "tp": 16, "fp": 3, "tn": 17, "fn": 4,
-    "accuracy": 0.825, "precision": 16 / 19, "recall": 0.8,
-    "specificity": 0.85, "f1": 32 / 39,
-}
-
 class AveragedForests:
     def __init__(self, *models) -> None:
         self.models = models
@@ -242,17 +233,16 @@ def _export_forest(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--platform", choices=("windows", "pi"), default="windows")
     parser.add_argument("--dataset", type=Path, default=Path("dataset"))
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 
-    cache_root = args.cache or Path("train/cache") / args.platform
-    artifact_path = args.artifact or Path("models") / f"fall_classifier_{args.platform}.json"
-    report_path = args.report or Path("train") / f"report_{args.platform}.json"
-    feature_version = 1 if args.platform == "windows" else FEATURE_VERSION
+    cache_root = args.cache or Path("train/cache/pi")
+    artifact_path = args.artifact or Path("models/fall_classifier_pi.json")
+    report_path = args.report or Path("train/report_pi.json")
+    feature_version = FEATURE_VERSION
 
     records = load_records(args.dataset)
     train_records, test_records = _split(records, 0.25)
@@ -313,16 +303,10 @@ def main() -> int:
             "required_votes": required_votes,
             "validation": metrics,
         }
-        if args.platform == "pi":
-            score = (
-                metrics["f2"], metrics["f1"], metrics["specificity"],
-                metrics["accuracy"],
-            )
-        else:
-            score = (
-                metrics["f1"], metrics["specificity"], metrics["recall"],
-                metrics["accuracy"],
-            )
+        score = (
+            metrics["f2"], metrics["f1"], metrics["specificity"],
+            metrics["accuracy"],
+        )
         print(name, trials[name])
         if best is None or score > best[0]:
             best = (score, name, threshold, vote_window, required_votes)
@@ -339,37 +323,29 @@ def main() -> int:
     )
     _export_forest(
         winner, threshold, vote_window, required_votes,
-        artifact_path, winner_name, args.platform, feature_version,
+        artifact_path, winner_name, "pi", feature_version,
     )
 
     report = {
         "seed": RANDOM_SEED,
-        "platform": args.platform,
+        "platform": "pi",
         "feature_version": feature_version,
         "split": {"train_videos": len(train_records), "test_videos": len(test_records)},
         "selection": "4-fold video-level out-of-fold predictions on training split",
-        "selection_metric": (
-            "F2 (recall weighted twice); event rule tuned by F1"
-            if args.platform == "pi" else "F1; event rule tuned by F1"
-        ),
+        "selection_metric": "F2 (recall weighted twice); event rule tuned by F1",
         "winner": winner_name,
         "threshold": threshold,
         "vote_window": vote_window,
         "required_votes": required_votes,
         "validation_trials": trials,
         "held_out_classifier": classifier_metrics,
-        "held_out_rules": RETIRED_RULE_METRICS if args.platform == "windows" else None,
-        "kept": (
-            classifier_metrics["f1"] > RETIRED_RULE_METRICS["f1"]
-            if args.platform == "windows" else True
-        ),
         "train_videos": [record.key for record in train_records],
         "test_videos": [record.key for record in test_records],
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({
-        "platform": args.platform,
+        "platform": "pi",
         "winner": winner_name,
         "threshold": threshold,
         "vote_window": vote_window,

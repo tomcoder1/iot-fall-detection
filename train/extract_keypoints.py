@@ -46,31 +46,20 @@ def extract_video(model: PoseModel, path: Path) -> tuple[np.ndarray, np.ndarray,
         fps,
     )
 
-def create_pose_model(platform: str) -> PoseModel:
-    if platform == "windows":
-        from detectors.windows_movenet_multipose_fall import (
-            INPUT_SIZE,
-            NUM_THREADS,
-            MoveNetMultiPose,
-            resolve_model_path,
-        )
-
-        return MoveNetMultiPose(resolve_model_path(), NUM_THREADS, INPUT_SIZE)
-
+def create_pose_model() -> PoseModel:
     from detectors.pi4_coral_posenet_fall import MODEL_PATH, PROJECT_POSENET_DIR, CoralPoseNet
     return CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--platform", choices=("windows", "pi"), default="windows")
     parser.add_argument("--dataset", type=Path, default=Path("dataset"))
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    cache_root = args.cache or Path("train/cache") / args.platform
+    cache_root = args.cache or Path("train/cache/pi")
     records = load_records(args.dataset)
-    model = create_pose_model(args.platform)
+    model = create_pose_model()
     for number, record in enumerate(records, 1):
         output = cache_path(cache_root, record)
         if output.exists() and not args.force:
@@ -83,7 +72,7 @@ def main() -> int:
             keypoints=keypoints,
             pose_scores=pose_scores,
             fps=np.float32(fps),
-            platform=np.asarray(args.platform),
+            platform=np.asarray("pi"),
         )
         print(f"[{number:03d}/{len(records)}] {len(keypoints):4d} frames {record.path}")
     return 0

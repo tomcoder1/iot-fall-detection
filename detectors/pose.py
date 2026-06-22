@@ -5,7 +5,6 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-
 NOSE = 0
 LEFT_SHOULDER = 5
 RIGHT_SHOULDER = 6
@@ -37,13 +36,11 @@ SKELETON_EDGES = (
     (RIGHT_KNEE, RIGHT_ANKLE),
 )
 
-
 @dataclass(frozen=True)
 class Pose:
     keypoints: np.ndarray
     bbox: Tuple[float, float, float, float]
     score: float
-
 
 def pose_bbox_from_keypoints(
     keypoints: np.ndarray,

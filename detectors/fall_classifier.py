@@ -10,11 +10,8 @@ import numpy as np
 from .keypoint_features import FEATURE_COUNTS, FEATURE_VERSION, feature_from_history
 from .pose import Pose, pose_bbox_from_keypoints
 
-
 @dataclass(frozen=True)
 class ClassifierConfig:
-    """Runtime-only pose filtering and alarm behavior."""
-
     min_pose_score: float = 0.05
     min_kpt_score: float = 0.06
     min_valid_keypoints: int = 4
@@ -22,7 +19,6 @@ class ClassifierConfig:
     stop_when_multiple_people: bool = True
     multi_person_confirm_frames: int = 2
     alarm_hold_sec: float = 5.0
-
 
 @dataclass(frozen=True)
 class ClassifierState:
@@ -32,10 +28,7 @@ class ClassifierState:
     status: str
     triggered: bool
 
-
 class ForestArtifact:
-    """Small, dependency-free evaluator for the exported sklearn forest."""
-
     def __init__(self, path: Path, expected_platform: Optional[str] = None) -> None:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
         if payload.get("format_version") not in (1, 2) or payload.get("classifier") != "forest":
@@ -82,10 +75,7 @@ class ForestArtifact:
             total += float(tree["positive_probability"][node])
         return total / len(self.trees)
 
-
 class KeypointFallClassifier:
-    """Stateful temporal fall classifier shared by Windows and Pi runtimes."""
-
     def __init__(
         self,
         model_path: Path,
@@ -132,9 +122,6 @@ class KeypointFallClassifier:
             self.history, float(now), self.model.feature_version
         )
         probability = self.model.predict_probability(features)
-        # A pose often disappears for a few frames when the person reaches the
-        # floor. The temporal feature history still carries valid fall evidence,
-        # and training/tuning includes these missing-pose frames.
         positive = probability >= self.model.threshold
         self.recent_votes.append(int(positive))
         if len(self.recent_votes) > self.model.vote_window:

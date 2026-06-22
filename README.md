@@ -238,10 +238,10 @@ the Firebase project.
 
 ## Development and evaluation
 
-Windows development uses a separate MoveNet pose model and classifier:
+Extract dataset keypoints, train the classifier, and evaluate it on the Pi:
 
-```powershell
-uv sync
-uv run python main_win.py
-uv run python test_win.py
+```bash
+python -m train.extract_keypoints
+python -m train.train_classifier
+python test_pi.py
 ```

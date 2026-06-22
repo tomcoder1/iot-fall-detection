@@ -12,9 +12,6 @@ from app_common import AppOptions, run_app
 from .fall_classifier import ClassifierConfig, KeypointFallClassifier
 from .pose import Pose, pose_bbox_from_keypoints
 
-# ============================================================
-# User settings. Edit these, do not use command-line arguments.
-# ============================================================
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
@@ -28,7 +25,6 @@ MODEL_PATH = PROJECT_ROOT / "models/posenet_mobilenet_v1_075_481_641_quant_decod
 FALL_CLASSIFIER_PATH = PROJECT_ROOT / "models/fall_classifier_pi.json"
 
 CLASSIFIER_CONFIG = ClassifierConfig(
-    # Match the quality filters used while extracting the training data.
     min_pose_score=0.05,
     min_kpt_score=0.06,
     min_valid_keypoints=4,
@@ -37,7 +33,7 @@ CLASSIFIER_CONFIG = ClassifierConfig(
     multi_person_confirm_frames=2,
     alarm_hold_sec=5.0,
 )
-# PoseNet keypoint names in google-coral/project-posenet.
+
 POSENET_NAME_TO_INDEX = {
     "NOSE": 0,
     "LEFT_EYE": 1,
@@ -57,7 +53,6 @@ POSENET_NAME_TO_INDEX = {
     "LEFT_ANKLE": 15,
     "RIGHT_ANKLE": 16,
 }
-
 
 class CoralPoseNet:
     def __init__(self, model_path: Path, project_dir: Path) -> None:
@@ -129,7 +124,6 @@ class CoralPoseNet:
             if idx is None:
                 continue
 
-            # PoseEngine gives x/y in model input coordinates.
             x_norm = float(np.clip(kp.point.x / max(self.input_width, 1), 0.0, 1.0))
             y_norm = float(np.clip(kp.point.y / max(self.input_height, 1), 0.0, 1.0))
             keypoints[idx] = [y_norm, x_norm, float(kp.score)]
@@ -140,9 +134,7 @@ class CoralPoseNet:
 
         return Pose(keypoints=keypoints, bbox=bbox, score=float(coral_pose.score))
 
-
 CoralPoseNetDetector = CoralPoseNet
-
 
 def main() -> int:
     from iot_server import start_iot_server, update_iot_state
@@ -164,7 +156,6 @@ def main() -> int:
         debug_every_n_frames=DEBUG_EVERY_N_FRAMES,
     )
     return run_app(model, detector, options, state_sink=update_iot_state)
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

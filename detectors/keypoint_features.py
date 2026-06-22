@@ -4,7 +4,6 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
-
 FEATURE_VERSION = 2
 HISTORY_OFFSETS_SEC = (1.5, 1.0, 0.5, 0.25, 0.0)
 MIN_KEYPOINT_SCORE = 0.06
@@ -21,7 +20,6 @@ RIGHT_SHOULDER = 6
 LEFT_HIP = 11
 RIGHT_HIP = 12
 
-
 def _midpoint(points: np.ndarray, left: int, right: int) -> tuple[float, float]:
     valid = []
     for index in (left, right):
@@ -31,7 +29,6 @@ def _midpoint(points: np.ndarray, left: int, right: int) -> tuple[float, float]:
         return 0.0, 0.0
     mean = np.mean(valid, axis=0)
     return float(mean[0]), float(mean[1])
-
 
 def _snapshot_features(keypoints: np.ndarray, pose_score: float) -> np.ndarray:
     result = np.zeros(SNAPSHOT_FEATURES, dtype=np.float32)
@@ -81,7 +78,6 @@ def _snapshot_features(keypoints: np.ndarray, pose_score: float) -> np.ndarray:
     result[cursor : cursor + 17] = np.clip(points[:, 2], 0.0, 1.0)
     return result
 
-
 def _assemble_features(
     snapshots: Sequence[np.ndarray], coverage: float, feature_version: int
 ) -> np.ndarray:
@@ -91,8 +87,6 @@ def _assemble_features(
         )
     if feature_version != 2:
         raise ValueError(f"Unsupported feature version: {feature_version}")
-    # Explicit motion terms let shallow trees split on changes directly instead
-    # of approximating subtraction through several independent branches.
     deltas = [
         snapshots[index + 1] - snapshots[index]
         for index in range(len(snapshots) - 1)
@@ -100,7 +94,6 @@ def _assemble_features(
     return np.concatenate(
         (*snapshots, *deltas, np.asarray([coverage], dtype=np.float32))
     )
-
 
 def feature_at_frame(
     keypoints: np.ndarray,
@@ -116,7 +109,6 @@ def feature_at_frame(
     coverage = min(1.0, frame_index / max(1.0, HISTORY_OFFSETS_SEC[0] * fps))
     return _assemble_features(snapshots, coverage, feature_version)
 
-
 def features_for_indices(
     keypoints: np.ndarray,
     pose_scores: np.ndarray,
@@ -131,7 +123,6 @@ def features_for_indices(
     if not rows:
         return np.empty((0, FEATURE_COUNTS[feature_version]), dtype=np.float32)
     return np.stack(rows).astype(np.float32, copy=False)
-
 
 def feature_from_history(
     history: Sequence[tuple[float, np.ndarray, float]],
