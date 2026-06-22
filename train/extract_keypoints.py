@@ -9,11 +9,9 @@ import numpy as np
 from app_common import PoseModel
 from train.dataset import cache_path, load_records
 
-
 def _fps(capture: cv2.VideoCapture) -> float:
     value = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
     return value if np.isfinite(value) and value > 1.0 else 30.0
-
 
 def extract_video(model: PoseModel, path: Path) -> tuple[np.ndarray, np.ndarray, float]:
     capture = cv2.VideoCapture(str(path))
@@ -48,7 +46,6 @@ def extract_video(model: PoseModel, path: Path) -> tuple[np.ndarray, np.ndarray,
         fps,
     )
 
-
 def create_pose_model(platform: str) -> PoseModel:
     if platform == "windows":
         from detectors.windows_movenet_multipose_fall import (
@@ -61,9 +58,7 @@ def create_pose_model(platform: str) -> PoseModel:
         return MoveNetMultiPose(resolve_model_path(), NUM_THREADS, INPUT_SIZE)
 
     from detectors.pi4_coral_posenet_fall import MODEL_PATH, PROJECT_POSENET_DIR, CoralPoseNet
-
     return CoralPoseNet(MODEL_PATH, PROJECT_POSENET_DIR)
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -92,7 +87,6 @@ def main() -> int:
         )
         print(f"[{number:03d}/{len(records)}] {len(keypoints):4d} frames {record.path}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

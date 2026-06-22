@@ -26,7 +26,6 @@ try:
 except ImportError:  # Optional on a minimal Raspberry Pi install.
     psutil = None
 
-
 ALERT_MESSAGE = "possible fall detected"
 app = FastAPI(title="Fall Detection IoT API")
 
@@ -50,14 +49,11 @@ _state: Dict[str, object] = {
     "alert_count": 0,
 }
 
-
 class NotificationToken(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
 
-
 def _stream_active_unlocked() -> bool:
     return _stream_requested or _active_stream_clients > 0
-
 
 def _status_unlocked() -> Dict[str, object]:
     return {
@@ -69,12 +65,10 @@ def _status_unlocked() -> Dict[str, object]:
         "stream_active": _stream_active_unlocked(),
     }
 
-
 def _status_event_unlocked() -> Dict[str, object]:
     status = _status_unlocked()
     status.pop("latest_alert")
     return {"type": "status_update", **status}
-
 
 def update_iot_state(
     frame_bgr,
@@ -84,8 +78,6 @@ def update_iot_state(
     fps: float = 0.0,
     disabled_reason: Optional[str] = None,
 ) -> None:
-    """Receive one raw camera frame and the latest detection state."""
-
     global _latest_frame, _latest_frame_monotonic, _frame_sequence
     global _previous_fall
 
@@ -94,7 +86,6 @@ def update_iot_state(
     push_alert = None
 
     with _lock:
-        # Keep a raw copy. JPEG encoding happens only in an active stream client.
         _latest_frame = frame_bgr.copy()
         _latest_frame_monotonic = now_monotonic
         _frame_sequence += 1
@@ -126,17 +117,14 @@ def update_iot_state(
     if push_alert is not None:
         queue_fall_alert(push_alert)
 
-
 @app.get("/status")
 def get_status():
     with _lock:
         return JSONResponse(_status_unlocked())
 
-
 @app.get("/notifications/status")
 def get_notification_status():
     return JSONResponse(notification_status())
-
 
 @app.post("/notifications/register")
 def register_notification_device(request: NotificationToken):
@@ -149,12 +137,10 @@ def register_notification_device(request: NotificationToken):
         }
     )
 
-
 @app.post("/notifications/unregister")
 def unregister_notification_device(request: NotificationToken):
     device_count = unregister_token(request.token)
     return JSONResponse({"registered": False, "registered_devices": device_count})
-
 
 def _stream_details_unlocked() -> Dict[str, object]:
     age = None
@@ -167,12 +153,10 @@ def _stream_details_unlocked() -> Dict[str, object]:
         "alert_mode": "possible_fall" if _state["fall_detected"] else "normal",
     }
 
-
 @app.get("/stream/status")
 def stream_status():
     with _lock:
         return JSONResponse(_stream_details_unlocked())
-
 
 @app.post("/stream/start")
 def stream_start():
@@ -181,14 +165,12 @@ def stream_start():
         _stream_requested = True
         return JSONResponse(_stream_details_unlocked())
 
-
 @app.post("/stream/stop")
 def stream_stop():
     global _stream_requested
     with _lock:
         _stream_requested = False
         return JSONResponse(_stream_details_unlocked())
-
 
 def mjpeg_generator():
     global _active_stream_clients
@@ -224,14 +206,12 @@ def mjpeg_generator():
         with _lock:
             _active_stream_clients = max(0, _active_stream_clients - 1)
 
-
 @app.get("/video_feed")
 def video_feed():
     return StreamingResponse(
         mjpeg_generator(),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
-
 
 def _cpu_temperature_c() -> Optional[float]:
     command = shutil.which("vcgencmd")
@@ -248,7 +228,6 @@ def _cpu_temperature_c() -> Optional[float]:
         return float(output.split("=")[1].split("'")[0])
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return None
-
 
 @app.get("/metrics")
 def metrics():
@@ -276,7 +255,6 @@ def metrics():
     result["cpu_temperature_c"] = _cpu_temperature_c()
     return JSONResponse(result)
 
-
 @app.websocket("/ws")
 async def websocket_status(websocket: WebSocket):
     await websocket.accept()
@@ -303,7 +281,6 @@ async def websocket_status(websocket: WebSocket):
         pass
     except Exception:
         pass
-
 
 def start_iot_server(host: str = "0.0.0.0", port: int = 8000) -> threading.Thread:
     def run():

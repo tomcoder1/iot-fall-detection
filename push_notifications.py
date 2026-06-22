@@ -14,7 +14,6 @@ except ImportError:  # The detector remains usable before FCM is configured.
     credentials = None
     messaging = None
 
-
 TOKEN_FILE = Path(
     os.environ.get(
         "FCM_TOKEN_FILE",
@@ -27,7 +26,6 @@ _tokens = set()
 _firebase_ready = False
 _last_error = None
 
-
 def _load_tokens() -> None:
     global _tokens, _last_error
     try:
@@ -39,7 +37,6 @@ def _load_tokens() -> None:
     except (OSError, json.JSONDecodeError) as exc:
         _last_error = f"Could not read FCM token file: {exc}"
 
-
 def _save_tokens_unlocked() -> None:
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     temporary = TOKEN_FILE.with_suffix(TOKEN_FILE.suffix + ".tmp")
@@ -48,7 +45,6 @@ def _save_tokens_unlocked() -> None:
         encoding="utf-8",
     )
     os.replace(temporary, TOKEN_FILE)
-
 
 def register_token(token: str) -> int:
     token = token.strip()
@@ -59,13 +55,11 @@ def register_token(token: str) -> int:
         _save_tokens_unlocked()
         return len(_tokens)
 
-
 def unregister_token(token: str) -> int:
     with _lock:
         _tokens.discard(token.strip())
         _save_tokens_unlocked()
         return len(_tokens)
-
 
 def _ensure_firebase() -> bool:
     global _firebase_ready, _last_error
@@ -93,7 +87,6 @@ def _ensure_firebase() -> bool:
         _last_error = f"Firebase initialization failed: {exc}"
         return False
 
-
 def notification_status() -> Dict[str, object]:
     _ensure_firebase()
     with _lock:
@@ -105,15 +98,11 @@ def notification_status() -> Dict[str, object]:
         "last_error": error,
     }
 
-
 def _chunks(values: List[str], size: int) -> Iterable[List[str]]:
     for start in range(0, len(values), size):
         yield values[start : start + size]
 
-
 def send_fall_alert(alert: Dict[str, str]) -> None:
-    """Send one system push notification to every registered mobile device."""
-
     global _last_error
     if not _ensure_firebase() or messaging is None:
         return
@@ -163,7 +152,6 @@ def send_fall_alert(alert: Dict[str, str]) -> None:
     except Exception as exc:
         _last_error = f"FCM send failed: {exc}"
 
-
 def queue_fall_alert(alert: Dict[str, str]) -> None:
     threading.Thread(
         target=send_fall_alert,
@@ -171,6 +159,5 @@ def queue_fall_alert(alert: Dict[str, str]) -> None:
         name="fcm-fall-alert",
         daemon=True,
     ).start()
-
 
 _load_tokens()

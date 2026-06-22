@@ -10,9 +10,7 @@ import cv2
 from app_common import PoseModel
 from detectors.fall_classifier import KeypointFallClassifier
 
-
 VIDEO_EXTENSIONS = ("*.mp4", "*.avi", "*.mov", "*.mkv")
-
 
 def find_videos(dataset_root: Path) -> List[Tuple[str, Path]]:
     videos: List[Tuple[str, Path]] = []
@@ -21,7 +19,6 @@ def find_videos(dataset_root: Path) -> List[Tuple[str, Path]]:
             for pattern in VIDEO_EXTENSIONS:
                 videos.extend((label, path) for path in sorted((subject_dir / label).glob(pattern)))
     return videos
-
 
 def process_video(
     model: PoseModel,
@@ -74,7 +71,6 @@ def process_video(
         "peak_probability": peak_probability,
         "peak_votes": peak_votes,
     }
-
 
 def run_dataset_test(
     model: PoseModel,

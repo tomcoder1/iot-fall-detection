@@ -12,7 +12,6 @@ from detectors.pi4_coral_posenet_fall import (
     CoralPoseNet,
 )
 
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--all", action="store_true", help="test all videos, including training videos")
@@ -31,7 +30,6 @@ def main() -> int:
         "PI CORAL CLASSIFIER RESULTS",
         video_keys,
     )
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

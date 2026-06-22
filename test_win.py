@@ -13,7 +13,6 @@ from detectors.windows_movenet_multipose_fall import (
     resolve_model_path,
 )
 
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--all", action="store_true", help="test all videos, including training videos")
@@ -32,7 +31,6 @@ def main() -> int:
         "WINDOWS CLASSIFIER RESULTS",
         video_keys,
     )
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

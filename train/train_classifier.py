@@ -13,12 +13,11 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from detectors.keypoint_features import FEATURE_VERSION, features_for_indices
 from train.dataset import VideoRecord, cache_path, load_records
 
-
 RANDOM_SEED = 42
 SAMPLE_HZ = 10.0
 POSITIVE_DURATION_SEC = 2.0
 
-# Recorded once on this exact seed-42 held-out split before the rule detector
+# Recorded once on seed 42 held-out split before the rule detector
 # was retired. Keeping the numbers preserves the model-selection comparison
 # without carrying obsolete production code.
 RETIRED_RULE_METRICS = {
@@ -27,10 +26,7 @@ RETIRED_RULE_METRICS = {
     "specificity": 0.85, "f1": 32 / 39,
 }
 
-
 class AveragedForests:
-    """Equal-weight forest ensemble that still exports as ordinary trees."""
-
     def __init__(self, *models) -> None:
         self.models = models
 
@@ -47,7 +43,6 @@ class AveragedForests:
             [model.predict_proba(features) for model in self.models], axis=0
         )
 
-
 def _split(records: Sequence[VideoRecord], test_size: float) -> tuple[list, list]:
     labels = [record.label for record in records]
     train, test = train_test_split(
@@ -58,14 +53,12 @@ def _split(records: Sequence[VideoRecord], test_size: float) -> tuple[list, list
     )
     return sorted(train, key=lambda item: item.key), sorted(test, key=lambda item: item.key)
 
-
 def _load_cache(cache_root: Path, record: VideoRecord) -> tuple[np.ndarray, np.ndarray, float]:
     path = cache_path(cache_root, record)
     if not path.exists():
         raise FileNotFoundError(f"Missing cache {path}; run extract_keypoints.py first")
     with np.load(path) as data:
         return data["keypoints"], data["pose_scores"], float(data["fps"])
-
 
 def _sample_indices(record: VideoRecord, frame_count: int, fps: float) -> tuple[np.ndarray, np.ndarray]:
     step = max(1, int(round(fps / SAMPLE_HZ)))
@@ -81,7 +74,6 @@ def _sample_indices(record: VideoRecord, frame_count: int, fps: float) -> tuple[
     keep = negative | positive
     return indices[keep], positive[keep].astype(np.int8)
 
-
 def build_samples(
     cache_root: Path, records: Sequence[VideoRecord], feature_version: int
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -95,7 +87,6 @@ def build_samples(
         labels.append(target)
     return np.concatenate(features), np.concatenate(labels)
 
-
 def _video_probabilities(
     model, cache_root: Path, record: VideoRecord, feature_version: int
 ):
@@ -105,7 +96,6 @@ def _video_probabilities(
         keypoints, pose_scores, fps, indices, feature_version
     )
     return model.predict_proba(features)[:, 1]
-
 
 def _event_prediction(
     probabilities: np.ndarray,
@@ -122,7 +112,6 @@ def _event_prediction(
             return True
     return False
 
-
 def _metrics(y_true: Sequence[int], y_pred: Sequence[int]) -> Dict[str, float]:
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     precision = tp / max(1, tp + fp)
@@ -137,7 +126,6 @@ def _metrics(y_true: Sequence[int], y_pred: Sequence[int]) -> Dict[str, float]:
         "specificity": float(specificity), "f1": float(f1), "f2": float(f2),
     }
 
-
 def _probability_map(
     model, cache_root: Path, records: Sequence[VideoRecord], feature_version: int
 ):
@@ -145,7 +133,6 @@ def _probability_map(
         record.key: _video_probabilities(model, cache_root, record, feature_version)
         for record in records
     }
-
 
 def evaluate_probabilities(
     probabilities_by_video,
@@ -162,7 +149,6 @@ def evaluate_probabilities(
         )))
     return _metrics(truth, prediction)
 
-
 def evaluate_model(
     model,
     cache_root: Path,
@@ -176,7 +162,6 @@ def evaluate_model(
     return evaluate_probabilities(
         probabilities, records, threshold, vote_window, required_votes
     )
-
 
 def tune_event_rule(probabilities, records: Sequence[VideoRecord]):
     best = None
@@ -196,7 +181,6 @@ def tune_event_rule(probabilities, records: Sequence[VideoRecord]):
                     )
     assert best is not None
     return best[1], best[2], best[3], best[4]
-
 
 def cross_validated_probabilities(
     model_factory, cache_root: Path, records, feature_version: int
@@ -218,7 +202,6 @@ def cross_validated_probabilities(
         ))
         print(f"  fold {fold}/4 complete")
     return probabilities
-
 
 def _export_forest(
     model,
@@ -256,7 +239,6 @@ def _export_forest(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(artifact, separators=(",", ":")), encoding="utf-8")
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -331,8 +313,6 @@ def main() -> int:
             "required_votes": required_votes,
             "validation": metrics,
         }
-        # Missing a fall is costlier than a false alarm. F2 weights recall
-        # twice while the event-rule tuner above still maximizes ordinary F1.
         if args.platform == "pi":
             score = (
                 metrics["f2"], metrics["f1"], metrics["specificity"],
@@ -399,7 +379,6 @@ def main() -> int:
         "report": str(report_path),
     }, indent=2))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

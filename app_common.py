@@ -10,16 +10,11 @@ import numpy as np
 from detectors.fall_classifier import ClassifierState, KeypointFallClassifier
 from detectors.pose import Pose, SKELETON_EDGES, pose_bbox_from_keypoints
 
-
 class PoseModel(Protocol):
-    """Platform-specific pose model consumed by the shared camera loop."""
-
     def infer(self, frame_bgr: np.ndarray) -> Tuple[List[Pose], Dict[str, object]]:
         ...
 
-
 StateSink = Callable[[np.ndarray, bool, str, int, float, Optional[str]], None]
-
 
 @dataclass(frozen=True)
 class AppOptions:
@@ -34,15 +29,12 @@ class AppOptions:
     debug_every_n_frames: int = 30
     camera_backend: Optional[int] = None
 
-
 def run_app(
     pose_model: PoseModel,
     detector: KeypointFallClassifier,
     options: AppOptions,
     state_sink: Optional[StateSink] = None,
 ) -> int:
-    """Run pose estimation followed by the learned keypoint classifier."""
-
     config = detector.config
     cap = _open_camera(options)
 
@@ -157,7 +149,6 @@ def run_app(
     print("[INFO] Done.")
     return 0
 
-
 def _open_camera(options: AppOptions) -> cv2.VideoCapture:
     if options.camera_backend is None:
         cap = cv2.VideoCapture(options.camera_index)
@@ -166,7 +157,6 @@ def _open_camera(options: AppOptions) -> cv2.VideoCapture:
 
     _configure_camera(cap, options)
 
-    # DirectShow can be unavailable for a particular Windows camera/driver.
     if not cap.isOpened() and options.camera_backend is not None:
         cap.release()
         cap = cv2.VideoCapture(options.camera_index)
@@ -176,12 +166,10 @@ def _open_camera(options: AppOptions) -> cv2.VideoCapture:
         raise RuntimeError(f"Could not open camera index {options.camera_index}")
     return cap
 
-
 def _configure_camera(cap: cv2.VideoCapture, options: AppOptions) -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, options.camera_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, options.camera_height)
     cap.set(cv2.CAP_PROP_FPS, options.camera_fps)
-
 
 def _draw_results(
     frame: np.ndarray,
@@ -200,7 +188,6 @@ def _draw_results(
         draw_pose(frame, accepted[0], state, min_kpt_score)
     for pose in accepted[1:]:
         draw_pose(frame, pose, None, min_kpt_score, disabled=True)
-
 
 def draw_pose(
     frame: np.ndarray,
@@ -265,7 +252,6 @@ def draw_pose(
         color,
         2,
     )
-
 
 def draw_hud(
     frame: np.ndarray,

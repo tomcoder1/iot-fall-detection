@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-
 @dataclass(frozen=True)
 class VideoRecord:
     path: Path
@@ -19,10 +18,8 @@ class VideoRecord:
     def key(self) -> str:
         return self.path.as_posix()
 
-
 _BRACKET_RE = re.compile(r"\[([^]]+)\]")
 _NUMBER_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?")
-
 
 def _fall_interval(classes: str, length: float) -> tuple[float, float]:
     segments = [segment.strip() for segment in classes.split(";") if segment.strip()]
@@ -37,8 +34,6 @@ def _fall_interval(classes: str, length: float) -> tuple[float, float]:
             if len(numbers) >= 2:
                 return numbers[0], numbers[1]
 
-    # One source row omits the fall interval but gives the preceding sitting
-    # interval. Treat its end as the annotated fall onset.
     preceding_ends = []
     for segment in segments:
         if "fall" in segment.lower():
@@ -51,7 +46,6 @@ def _fall_interval(classes: str, length: float) -> tuple[float, float]:
         return max(preceding_ends), length
 
     raise ValueError(f"Could not parse fall interval: {classes!r}")
-
 
 def load_records(dataset_root: Path) -> List[VideoRecord]:
     records: List[VideoRecord] = []
@@ -75,7 +69,6 @@ def load_records(dataset_root: Path) -> List[VideoRecord]:
                         VideoRecord(path, label, subject_dir.name, start, end)
                     )
     return records
-
 
 def cache_path(cache_root: Path, record: VideoRecord) -> Path:
     subject = record.path.parent.parent.name.replace(" ", "_")
