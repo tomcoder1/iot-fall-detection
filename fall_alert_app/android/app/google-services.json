@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "197094605716",
+    "project_id": "fall-alert-1e191",
+    "storage_bucket": "fall-alert-1e191.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:197094605716:android:72ed8f0f5625a3ef044581",
+        "android_client_info": {
+          "package_name": "com.example.fall_alert_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCoff8Ph-sB0OxQyxb4NPnzYHTGI5FOric"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
