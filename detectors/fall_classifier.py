@@ -7,7 +7,7 @@ from typing import List, Optional, Sequence
 
 import numpy as np
 
-from .keypoint_features import FEATURE_COUNTS, FEATURE_VERSION, feature_from_history
+from .keypoint_features import FEATURE_COUNTS, feature_from_history
 from .pose import Pose, pose_bbox_from_keypoints
 
 @dataclass(frozen=True)

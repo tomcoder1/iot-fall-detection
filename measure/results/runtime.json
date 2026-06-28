@@ -1,0 +1,8 @@
+{
+  "source": "/home/pi/iot-fall-detection/dataset/Subject 1/Fall/01.mp4",
+  "duration_s": 59.908,
+  "samples": 57,
+  "average_fps": 10.334666666666667,
+  "peak_temperature_c": 50.6,
+  "average_memory_percent": 6.740350877192983
+}

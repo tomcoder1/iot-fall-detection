@@ -1,4 +1,31 @@
-# IoT fall detection
+# FALL DETECTION
+
+Group 6 IoT project by Pham Tommy (104240044) and Nguyen Trung Kien
+(104240377).
+
+This repository contains an edge-based fall-detection prototype for a
+Raspberry Pi 4, Google Coral USB Accelerator, USB camera, and Android phone.
+PoseNet produces 17 body keypoints, a 559-feature temporal representation is
+evaluated by a 200-tree Extra Trees classifier, and FastAPI exposes status,
+WebSocket alerts, metrics, and an MJPEG live view. The Android-only Flutter app
+connects to the Pi over the local network.
+
+The held-out evaluation contains 40 videos and reports 82.5% accuracy, 100%
+recall, 65% specificity, and 85.1% F1. This is an educational prototype, not a
+medical or emergency-response device.
+
+## Repository structure
+
+```text
+detectors/       Pose handling, feature construction, and forest inference
+models/          Coral PoseNet model and exported Extra Trees classifier
+train/           Dataset parsing, keypoint extraction, training, and results
+measure/         Raspberry Pi FPS, temperature, and memory measurement tools
+fall_alert_app/  Android-only Flutter monitoring application
+```
+
+The external GMDCSA24 dataset is intentionally not stored in Git. The project
+uses version 2.0 from Zenodo: <https://doi.org/10.5281/zenodo.12921216>.
 
 ## What you need
 
@@ -131,11 +158,11 @@ http://<PI-IP>:8000/status
 The server also provides `/metrics`, `/video_feed`, `/stream/status`, notification
 registration endpoints, and a WebSocket at `ws://<pi-ip>:8000/ws`.
 
-## 3. Set up the mobile app
+## 3. Set up the Android app
 
-The Flutter client is maintained in a separate repository. Install the current
-stable Flutter SDK and Android Studio on your development computer, install the
-Android SDK when prompted, then check the toolchain:
+The Flutter source is included in `fall_alert_app/` and supports Android only.
+Install the stable Flutter SDK, Android Studio, and Android SDK, then check the
+toolchain:
 
 ```bash
 flutter doctor
@@ -149,12 +176,13 @@ USB, and confirm Flutter can see it:
 flutter devices
 ```
 
-Download and run the app:
+Build and run the included app:
 
 ```bash
-git clone https://github.com/tomcoder1/fall_alert_app.git
 cd fall_alert_app
 flutter pub get
+flutter analyze
+flutter test
 flutter run
 ```
 
@@ -177,7 +205,7 @@ Firebase Cloud Messaging is required for system push notifications when the app
 is in the background or closed.
 
 Install Node.js first, then install the Firebase CLI and FlutterFire CLI. In the
-mobile app directory, sign in and configure the Android and/or iOS app:
+mobile app directory, sign in and configure the Android app:
 
 ```bash
 npm install --global firebase-tools
@@ -187,10 +215,11 @@ flutterfire configure
 flutter pub get
 ```
 
-Choose the same Firebase project for the phone and Pi. `flutterfire configure`
-generates `lib/firebase_options.dart` and the platform Firebase configuration.
-For a production app, replace the example Android application ID and iOS bundle
-ID before configuring Firebase.
+Choose the same Firebase project for the phone and Pi and select Android when
+`flutterfire configure` asks for target platforms. The command generates
+`lib/firebase_options.dart` and the Android Firebase configuration. For a
+production build, replace the example Android application ID before running
+the configuration command.
 
 In Firebase Console, open **Project settings > Service accounts**, generate a
 private key, and copy the downloaded JSON to the Pi. Keep it private and outside
@@ -217,9 +246,6 @@ the Pi-side status at:
 http://<pi-ip>:8000/notifications/status
 ```
 
-For iOS, run the app from macOS with Xcode, enable the Push Notifications and
-Background Modes > Remote notifications capabilities, and upload an APNs key to
-the Firebase project.
 
 ## Troubleshooting
 
@@ -238,10 +264,41 @@ the Firebase project.
 
 ## Development and evaluation
 
-Extract dataset keypoints, train the classifier, and evaluate it on the Pi:
+Download GMDCSA24 separately and place its `Subject 1` to `Subject 4`
+directories under `dataset/`. The directory is ignored by Git. Extract
+keypoints, train the classifier, and evaluate it on the Pi:
 
 ```bash
 python -m train.extract_keypoints
 python -m train.train_classifier
 python test_pi.py
 ```
+
+The training script uses a seeded 120/40 video split. It compares eight forest
+candidates with four-fold video-level out-of-fold predictions, refits the
+selected model on the development videos, and evaluates the held-out videos
+once. Stored results are available in `train/report_pi.json`.
+
+Measure the Pi using either a connected camera or a reproducible video replay:
+
+```bash
+python -m measure.collect_metrics --camera-index 0 --duration 60
+# or
+python -m measure.collect_metrics --video /path/to/video.mp4 --duration 60
+
+python -m measure.plot_metrics measure/results/runtime.csv
+```
+
+The measurement output includes interval FPS, CPU temperature, whole-system
+memory use, a JSON summary, and a Matplotlib chart.
+
+## Security and limitations
+
+- HTTP, WebSocket, MJPEG, and token-registration endpoints have no
+  authentication or TLS; use the prototype only on a trusted LAN.
+- The classifier follows only the highest-confidence accepted pose.
+- The dataset contains four subjects, and the video-level split is not
+  subject-independent.
+- Firebase delivery is optional and has not been validated end to end.
+- Never commit `firebase-service-account.json`, `fcm_tokens.json`, datasets,
+  virtual environments, caches, or generated build directories.

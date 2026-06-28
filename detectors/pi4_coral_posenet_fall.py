@@ -109,7 +109,7 @@ class CoralPoseNet:
         poses = [self._convert_pose(p) for p in coral_poses]
         return poses, {
             "model_type": "coral_posenet",
-            "inference_ms": float(inference_time),
+            "inference_ms": float(inference_time) * 1000.0,
             "raw_pose_scores": [float(p.score) for p in poses],
         }
 
