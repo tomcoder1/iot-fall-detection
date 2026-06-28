@@ -164,6 +164,11 @@ The Flutter source is included in `fall_alert_app/` and supports Android only.
 Install the stable Flutter SDK, Android Studio, and Android SDK, then check the
 toolchain:
 
+A prebuilt demonstration APK is available at
+`fall_alert_app/releases/app-fall.apk`. It has been built in release
+mode and signed with the project's debug key, so it is suitable for direct
+testing but not Play Store publication.
+
 ```bash
 flutter doctor
 flutter doctor --android-licenses
