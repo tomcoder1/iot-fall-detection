@@ -2,3 +2,8 @@ __pycache__/
 fcm_tokens.json
 firebase-service-account.json
 train/cache/
+dataset/
+.tools/
+report/.latex-build/
+report/*contact_sheet.png
+report_sources/
